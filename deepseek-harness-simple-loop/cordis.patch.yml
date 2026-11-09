@@ -1,0 +1,12 @@
+# 关掉内置的 agent-loop，再插入我们自己的 loop。
+# dsh 的 patch 只能按 id 改同名行的 config，换实现必须「禁用旧行 + insert 新行」。
+- id: agent-loop
+  disabled: true
+
+- insert:
+    - id: dwh-simple-loop
+      name: 'dwh-simple-loop'
+      disabled: false
+      config:
+        # 初始模式：echo（复读）或 reverse（倒序）。进对话后也能用 /mode 切换。
+        mode: echo

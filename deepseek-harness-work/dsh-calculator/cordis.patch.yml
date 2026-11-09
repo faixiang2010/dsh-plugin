@@ -1,0 +1,6 @@
+# dsh-calculator bundle patch.
+# Installed through `plugin_manager install_bundle`; the bundle layer inserts
+# the single plugin row below into the running profile.
+- insert:
+    - id: calculator
+      name: '@local/dsh-calculator'

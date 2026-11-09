@@ -1,0 +1,24 @@
+{
+  "name": "dsh-xuya-customization",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.28.5",
+  "scripts": {
+    "build": "node scripts/xuya.mjs build",
+    "test": "node --test tests/*.test.mjs",
+    "start:web": "node scripts/xuya.mjs web",
+    "start:desktop": "node scripts/xuya.mjs desktop",
+    "build:dsh": "node scripts/xuya.mjs build-dsh",
+    "package:windows": "node scripts/xuya.mjs package-windows",
+    "check:upstream": "node scripts/xuya.mjs check",
+    "typecheck": "tsc --noEmit",
+    "test:boot": "node tests/boot-brand.e2e.mjs"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.0",
+    "typescript": "^6.0.3",
+    "tsdown": "^0.22.0",
+    "sharp": "^0.35.5"
+  }
+}

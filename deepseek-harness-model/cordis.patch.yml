@@ -1,0 +1,93 @@
+# 大伟模式（DAWEI-MODE）组合包补丁。
+#
+# 安装本组合包后，DSH 会把下面这条 `@deepseek-ai/dsh-agent-preset` 声明插入
+# 当前 profile 的组合，模式选择列表因此多出「大伟模式」。
+# AgentPresetRegistry.list() 按 (order ?? Infinity, id) 排序，内置模式是 1..4，
+# 本机 profile 里的 loop-engine 预设是 100，这里用 1000 保证排在列表最下面。
+#
+# 工具底座取自极简模式（终端 + 读图 + 上下文压缩），另加 persona 标记与
+# `deepseek-harness-model` 包自身提供的 dawei_probe 探针行（该包安装后已在
+# profile 依赖中，裸包名可直接解析）。
+- insert:
+    - id: preset-dawei
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: dawei
+        name: 大伟模式
+        description: 极简工具底座加模式自检探针，用来验证 Agent 预设是否真的生效。
+        order: 1000
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are Dawei mode (大伟模式, DAWEI-MODE), a software engineering assistant powered by the {{model}} model.
+                自检协议：当用户要求「大伟自检」或询问你当前运行在哪个模式时，必须先调用 dawei_probe 工具，再原样复述它返回的 marker。不要凭记忆回答模式名称，也不要假装调用工具。
+              complete: true
+              includeRuntimeContext: false
+          - id: dawei-probe
+            name: 'deepseek-harness-model'
+            config:
+              mode: dawei
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: false
+              readImage: true
+              write: false
+              edit: false
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+          - id: persistent-shell
+            name: cordis:group
+            group: true
+            isolate:
+              terminals: true
+            config:
+              - id: pty
+                name: '@deepseek-ai/dsh-terminal'
+              - id: terminal-bash
+                name: '@deepseek-ai/dsh-terminal-bash'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 300000
+              - id: persistent-bash
+                name: '@deepseek-ai/dsh-tool-bash-persistent'
+                disabled: !!js process.platform === 'win32'
+                config:
+                  timeoutMs: 300000
+                  description: |-
+                    Run commands in a bash shell
+                    * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+                    * Network access depends on the task environment. Prefer configured mirrors/proxies when they are available.
+                    * State is persistent across command calls and discussions with the user.
+                    * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
+                    * Please avoid commands that may produce a very large amount of output.
+                    * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.
+              - id: terminal-pwsh
+                name: '@deepseek-ai/dsh-terminal-bash'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  shellDialect: pwsh
+                  timeoutMs: 300000
+              - id: persistent-pwsh
+                name: '@deepseek-ai/dsh-tool-pwsh-persistent'
+                disabled: !!js process.platform !== 'win32'
+                config:
+                  timeoutMs: 300000
+                  description: |-
+                    Run commands in a PowerShell shell
+                    * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+                    * You don't have access to the internet via this tool.
+                    * State is persistent across command calls and discussions with the user.
+                    * Use native Windows paths (C:\...) and $env:NAME variables; this is PowerShell, not bash.
+                    * Please avoid commands that may produce a very large amount of output.
+                    * Please run long lived commands in the background, e.g. 'Start-Job' or start a server with Start-Process.

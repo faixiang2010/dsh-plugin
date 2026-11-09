@@ -1,0 +1,10 @@
+{
+  "meta.title": "计算器",
+  "meta.description": "浮在界面上的计算器，支持键盘输入，从侧边栏底部打开。",
+  "title": "计算器",
+  "action.open": "打开计算器",
+  "action.close": "关闭计算器",
+  "button.close": "关闭",
+  "hint.keyboard": "键盘：0-9 . + - * / % Enter 回车，Backspace 退格，Delete 或 C 清空，Esc 关闭",
+  "error.divideByZero": "不能除以零"
+}

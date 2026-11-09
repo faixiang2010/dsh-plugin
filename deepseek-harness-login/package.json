@@ -1,0 +1,40 @@
+{
+  "name": "deepseek-harness-login",
+  "version": "0.4.4",
+  "description": "DSH 自有账户登录插件（内网/离线场景）。拦截登录入口，改为本地用户名密码校验，无需连接 DeepSeek 服务。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml"
+      ]
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "lib/login-page.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "login",
+    "auth"
+  ],
+  "license": "MIT"
+}

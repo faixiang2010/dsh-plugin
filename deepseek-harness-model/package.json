@@ -1,0 +1,17 @@
+{
+  "name": "deepseek-harness-model",
+  "version": "0.1.0",
+  "private": true,
+  "description": "大伟模式（DAWEI-MODE）：一条 Agent 预设声明加一个模式自检探针，用来验证 DSH 模式是否真的生效。",
+  "type": "module",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

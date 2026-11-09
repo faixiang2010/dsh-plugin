@@ -1,0 +1,5 @@
+# dsh-dashboard-wuhan bundle layer: 默认启用，用户可在 DSH 插件管理中手动关闭。
+- insert:
+    - id: dsh-dashboard-wuhan
+      name: dsh-dashboard-wuhan
+      disabled: false

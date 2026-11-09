@@ -1,0 +1,31 @@
+{
+  "name": "dwh-simple-loop",
+  "version": "0.1.2",
+  "private": true,
+  "type": "module",
+  "description": "一个最小的自定义 agent loop demo：复读 / 倒序 两种模式，不调用大模型",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "agent.js",
+    "cordis.patch.yml",
+    "switch-loop.ps1",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "@deepseek-ai/dsh-session": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-agent": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-llm": "0.2.2-rc.1",
+    "@deepseek-ai/dsh-scope": "0.2.2-rc.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

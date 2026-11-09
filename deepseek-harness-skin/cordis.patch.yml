@@ -1,0 +1,10 @@
+# Techno Neon skin bundle patch.
+#
+# Applied after the built-in bundle layers, so the row joins the running
+# composition without touching the DSH checkout. The Host half is an empty
+# plugin; every visual change happens in the browser half (lib/client.js),
+# which registers themes on ctx.theme and injects one scoped stylesheet.
+
+- insert:
+    - id: skin-techno-neon
+      name: 'dsh-skin-techno-neon'

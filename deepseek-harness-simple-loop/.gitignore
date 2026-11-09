@@ -1,0 +1,14 @@
+# 本地验证数据可能包含临时凭据及宿主状态。
+/.verify/
+
+# 插件运行日志。
+boot.log
+/logs/
+
+# 依赖与构建产物
+node_modules/
+lib/
+*.log
+.DS_Store
+.idea/
+.vscode/

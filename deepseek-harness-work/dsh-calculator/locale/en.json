@@ -1,0 +1,10 @@
+{
+  "meta.title": "Calculator",
+  "meta.description": "Floating calculator with keyboard support, opened from the sidebar footer.",
+  "title": "Calculator",
+  "action.open": "Open calculator",
+  "action.close": "Close calculator",
+  "button.close": "Close",
+  "hint.keyboard": "Keyboard: 0-9 . + - * / % Enter Backspace, Delete or C clears, Esc closes",
+  "error.divideByZero": "Cannot divide by zero"
+}

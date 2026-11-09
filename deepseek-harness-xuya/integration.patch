@@ -1,0 +1,1057 @@
+diff --git a/apps/desktop-host/src/index.ts b/apps/desktop-host/src/index.ts
+index 31bbbffe15..40c4a632c8 100644
+--- a/apps/desktop-host/src/index.ts
++++ b/apps/desktop-host/src/index.ts
+@@ -32,7 +32,7 @@ async function main(): Promise<void> {
+     environment: loadLayeredEnv('dsh'),
+     profile: 'desktop',
+     resolvedProfile: { profile, installAnchor },
+-    patchFiles: [],
++    patchFiles: process.env.DSH_DESKTOP_PATCH === undefined ? [] : [process.env.DSH_DESKTOP_PATCH],
+     args: ['--no-open', '--host', '127.0.0.1', '--port', '0'],
+     ...(process.argv[5] === undefined ? {} : {
+       packageManager: {
+diff --git a/apps/desktop/installer/theme.nsh b/apps/desktop/installer/theme.nsh
+index a80c5761b0..94c6d0c5da 100644
+--- a/apps/desktop/installer/theme.nsh
++++ b/apps/desktop/installer/theme.nsh
+@@ -1,4 +1,5 @@
+ ; Figma logical pixels, independent of the Windows display scale.
++!include /NONFATAL "${INSTALLER_BUILD_DIR}\product-theme.nsh"
+ !define INSTALLER_WINDOW_SIZE 600
+ !define INSTALLER_BRAND_Y 174
+ !define INSTALLER_BRAND_HEIGHT 196
+@@ -45,11 +46,15 @@ Var InstallerBorder
+ 
+ ; SetCtlColors accepts only compile-time colors; choose between the two native palettes.
+ !macro InstallerControlColors HANDLE
++    !ifmacrodef ProductInstallerControlColors
++        !insertmacro ProductInstallerControlColors ${HANDLE}
++    !else
+     ${If} $InstallerTheme == "dark"
+         SetCtlColors ${HANDLE} FFFFFF 151517
+     ${Else}
+         SetCtlColors ${HANDLE} 0F1115 FFFFFF
+     ${EndIf}
++    !endif
+ !macroend
+ 
+ Function InstallerResolveTheme
+@@ -94,4 +99,7 @@ Function InstallerResolveTheme
+         StrCpy $InstallerButtonText 0xFFFFFF
+         StrCpy $InstallerBorder 0xFFBBC0C8
+     ${EndIf}
++    !ifmacrodef ProductInstallerResolveTheme
++        !insertmacro ProductInstallerResolveTheme
++    !endif
+ FunctionEnd
+diff --git a/apps/desktop/renderer/welcome.html b/apps/desktop/renderer/welcome.html
+index 40178fd1b8..0d15434504 100644
+--- a/apps/desktop/renderer/welcome.html
++++ b/apps/desktop/renderer/welcome.html
+@@ -8,6 +8,7 @@
+     <link rel="stylesheet" href="../lib/welcome/brand-font.css">
+     <link rel="stylesheet" href="../lib/welcome/welcome.css">
+     <link rel="stylesheet" href="welcome.css">
++    <link rel="stylesheet" href="../lib/welcome/product-theme.css">
+     <script src="../lib/welcome/welcome.js" defer></script>
+   </head>
+   <body>
+diff --git a/apps/desktop/scripts/desktop-package-environment.mjs b/apps/desktop/scripts/desktop-package-environment.mjs
+index 83e9dbbc0f..08d90a1a85 100644
+--- a/apps/desktop/scripts/desktop-package-environment.mjs
++++ b/apps/desktop/scripts/desktop-package-environment.mjs
+@@ -2,6 +2,7 @@
+ 
+ import { accessSync, constants, statSync } from 'node:fs'
+ import { dirname, isAbsolute, join } from 'node:path'
++import { readProductBrand } from '../../../scripts/product-brand.mjs'
+ import { fileURLToPath } from 'node:url'
+ import { readDesktopPackageSettings as readSettings } from './desktop-file-settings.mjs'
+ import { resolveDesktopAppId, resolveMacOSNotarizationEnvironment, resolveMacOSSigningEnvironment, resolveNpmRegistry } from './desktop-release-environment.mjs'
+@@ -121,7 +122,7 @@ export function validateDesktopPackageEnvironment(environment, target, options =
+   resolveDesktopTargetBuildPaths(environment, target.platform, target.arch)
+   resolveDesktopAppId(environment)
+   resolveNpmRegistry(environment)
+-  if (target.platform !== 'darwin' || !options.unsigned) resolveDesktopPolicyEnvironment(environment)
++  if (readProductBrand(environment)?.manualUpdates !== true && (target.platform !== 'darwin' || !options.unsigned)) resolveDesktopPolicyEnvironment(environment)
+   if (target.platform === 'darwin') resolveMacOSPackageSettings(environment)
+   else resolveWindowsPackageSettings(environment)
+   if (options.unsigned) return
+diff --git a/apps/desktop/scripts/electron-builder-config.mjs b/apps/desktop/scripts/electron-builder-config.mjs
+index d5522e3da9..23dfed8d3e 100644
+--- a/apps/desktop/scripts/electron-builder-config.mjs
++++ b/apps/desktop/scripts/electron-builder-config.mjs
+@@ -1,8 +1,9 @@
++import { readProductBrand } from '../../../scripts/product-brand.mjs'
+ import { readInstallerLocales, renderInstallerStrings } from './installer-locales.mjs'
+ import { officePackageDirectories } from '../../../scripts/libreoffice-packages.mjs'
+ import { X509Certificate } from 'node:crypto'
+ import { readFileSync } from 'node:fs'
+-import { readFile, writeFile } from 'node:fs/promises'
++import { copyFile, readFile, rm, writeFile } from 'node:fs/promises'
+ import { join, relative, sep } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ import { execFile } from 'node:child_process'
+@@ -51,6 +52,7 @@ export function createElectronBuilderConfig(
+   preparedRuntime = undefined,
+   preparedRuntimeVersion = undefined,
+ ) {
++  const brand = readProductBrand(env)
+   const appId = resolveDesktopAppId(env)
+   const targetPlatform = env.DSH_DESKTOP_TARGET_PLATFORM
+   const resolvedPlatform = targetPlatform ?? hostPlatform
+@@ -66,7 +68,7 @@ export function createElectronBuilderConfig(
+   if (skipNotarization && (unsigned || resolvedPlatform !== 'darwin')) throw new Error('Skipping notarization requires a signed macOS build')
+   const packagesMacOS = targetPlatform === 'darwin' || (targetPlatform === undefined && hostPlatform === 'darwin')
+   const packagesWindows = resolvedPlatform === 'win32'
+-  const policy = packagesMacOS && unsigned ? undefined : resolveDesktopPolicyEnvironment(env)
++  const policy = brand?.manualUpdates === true || (packagesMacOS && unsigned) ? undefined : resolveDesktopPolicyEnvironment(env)
+   if (resolvedPlatform === 'win32') installWindowsDirectoryInstaller()
+   const macOSSigning = packagesMacOS && !unsigned ? resolveMacOSSigningEnvironment(env) : undefined
+   if (packagesMacOS && !unsigned && !skipNotarization) resolveMacOSNotarizationEnvironment(env)
+@@ -111,16 +113,17 @@ export function createElectronBuilderConfig(
+     protocols: [{ name: 'DeepSeek Harness', schemes: ['dsh'] }],
+     extraMetadata: {
+       dshDesktopAppId: appId,
++      ...(brand === undefined ? {} : { productName: 'DeepSeek Harness' }),
+       dshDesktopUpdateChannel: update?.channel ?? 'nightly',
+       ...(policy === undefined ? {} : { dshMandatoryUpdatePolicy: policy }),
+       ...buildVersion === productVersion ? {} : { version: buildVersion },
+       ...packaged === undefined ? {} : { dshBuildCommit: packaged.commit, dshBuildDirty: packaged.dirty },
+     },
+-    productName: 'DeepSeek Harness',
++    productName: brand?.name ?? 'DeepSeek Harness',
+     // The default copyright uses author.name; this line names the product instead.
+     copyright: `Copyright © ${new Date().getFullYear()} \${productName}`,
+     // Unsigned builds carry their own suffix so a shared file can never pass for a release artifact.
+-    artifactName: `deepseek-harness-\${version}-\${os}-\${arch}${output.suffix}.\${ext}`,
++    artifactName: `${brand?.artifactName ?? 'deepseek-harness'}-\${version}-\${os}-\${arch}${output.suffix}.\${ext}`,
+     directories: { output: output.directory },
+     asar: true,
+     electronDist: buildPaths.electron,
+@@ -129,10 +132,13 @@ export function createElectronBuilderConfig(
+       if (resolvedPlatform !== 'win32') return true
+       await promisify(execFile)('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+         fileURLToPath(new URL('./prepare-windows-installer.ps1', import.meta.url)),
+-        '-OutputDirectory', join(buildPaths.root, 'installer-ui')], {
++        '-OutputDirectory', join(buildPaths.root, 'installer-ui'),
++        ...(brand?.installerAssets === undefined ? [] : ['-AssetsDirectory', brand.installerAssets])], {
+         env: scrubWindowsSigningEnvironment(env), windowsHide: true,
+       })
+-      await writeFile(join(buildPaths.root, 'installer-ui', 'strings.nsh'), renderInstallerStrings(readInstallerLocales()), 'utf8')
++      await writeFile(join(buildPaths.root, 'installer-ui', 'strings.nsh'), renderInstallerStrings(readInstallerLocales(), brand?.name), 'utf8')
++      if (brand?.installerTheme !== undefined) await copyFile(brand.installerTheme, join(buildPaths.root, 'installer-ui', 'product-theme.nsh'))
++      else await rm(join(buildPaths.root, 'installer-ui', 'product-theme.nsh'), { force: true })
+       if (windowsSigner !== undefined) {
+         await windowsSigner({ path: join(buildPaths.root, 'installer-ui', 'window-frame.dll'), hash: 'sha256', isNest: false })
+       }
+@@ -141,6 +147,7 @@ export function createElectronBuilderConfig(
+     },
+     files: [
+       'lib/main.js',
++      ...(brand === undefined ? [] : ['lib/product-icon.png', 'lib/product-tray.ico']),
+       'lib/operation-report-worker.js',
+       'lib/welcome/**/*',
+       'lib/preload-app.cjs',
+@@ -159,9 +166,9 @@ export function createElectronBuilderConfig(
+     asarUnpack: unpack,
+     extraResources: [
+       { from: buildPaths.runtime, to: 'runtime' },
+-      { from: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
++      { from: brand?.windowsIcon ?? fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)), to: 'icon.png' },
+       // Windows tray bitmaps; macOS keeps the Dock and ships no menu bar icon.
+-      ...(packagesWindows ? [{ from: fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
++      ...(packagesWindows ? [{ from: brand?.windowsTrayIcon ?? fileURLToPath(new URL('../resources/tray-windows.ico', import.meta.url)), to: 'tray.ico' }] : []),
+     ],
+     mac: {
+       icon: fileURLToPath(new URL('../resources/icon-macos.png', import.meta.url)),
+@@ -245,7 +252,7 @@ export function createElectronBuilderConfig(
+       )
+     },
+     win: {
+-      icon: fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
++      icon: brand?.windowsIcon ?? fileURLToPath(new URL('../resources/icon-windows.png', import.meta.url)),
+       forceCodeSigning: !unsigned,
+       signtoolOptions: {
+         sign: windowsSigner,
+diff --git a/apps/desktop/scripts/installer-locales.mjs b/apps/desktop/scripts/installer-locales.mjs
+index 5785a99021..c962fa8fcf 100644
+--- a/apps/desktop/scripts/installer-locales.mjs
++++ b/apps/desktop/scripts/installer-locales.mjs
+@@ -62,13 +62,14 @@ export function readInstallerLocales(directory = defaultDirectory) {
+ /**
+  * Generate guarded NSIS LangString declarations from validated JSON resources.
+  * @param {ReturnType<typeof readInstallerLocales>} locales - Resources for all languages or one isolated native-test build.
++ * @param {string} [productName] Custom application display name.
+  * @returns {string} UTF-8 NSIS source, with literal dollar signs, quotes and line breaks escaped.
+  */
+-export function renderInstallerStrings(locales) {
++export function renderInstallerStrings(locales, productName) {
+   const escape = (/** @type {string} */ text) => text.replace(/\$|"|\r|\n/gu, character => ({ '$': '$$', '"': '$\\"', '\r': '$\\r', '\n': '$\\n' })[character])
+   return '; Generated from installer/locales/*.json.\n' + locales.map(locale =>
+     `!ifdef LANG_${locale.nsisLanguage}\n` + Object.entries(locale.strings).map(([key, text]) =>
+-      `LangString ${key} \${LANG_${locale.nsisLanguage}} "${escape(text)}"\n`).join('') + '!endif\n').join('')
++      `LangString ${key} \${LANG_${locale.nsisLanguage}} "${escape(productName === undefined ? text : text.replaceAll('DeepSeek Harness', productName))}"\n`).join('') + '!endif\n').join('')
+ }
+ 
+ if (import.meta.main) {
+diff --git a/apps/desktop/scripts/prepare-dsh.ts b/apps/desktop/scripts/prepare-dsh.ts
+index a069888036..28b3249637 100644
+--- a/apps/desktop/scripts/prepare-dsh.ts
++++ b/apps/desktop/scripts/prepare-dsh.ts
+@@ -1,5 +1,6 @@
+ /** Materialize the complete production runtime before publishing Desktop resources. */
+ 
++import { stageProductBrandRuntime } from '../../../scripts/product-brand.mjs'
+ import { resolveMacOSSignatureCacheDirectory } from './macos-signature-cache-directory.mjs'
+ import { packagingStep } from './packaging-step.mjs'
+ import { spawn } from 'node:child_process'
+@@ -168,6 +169,7 @@ async function main(): Promise<void> {
+       await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:dsh-native', () => signMacOSRuntime(DSH_OUTPUT_ROOT, resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, cacheDirectory))
+       await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'sign:primary-native', () => signMacOSRuntime(join(RUNTIME_ROOT, 'primary-runtime'), resolveDesktopAppId(process.env), resolveMacOSSigningEnvironment(process.env), target.arch, cacheDirectory, 'primary'))
+     }
++    stageProductBrandRuntime(DSH_OUTPUT_ROOT)
+     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:manifests', () => prepareRuntimeManifests(DSH_OUTPUT_ROOT))
+     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:primary-smoke', async () => smokePrimaryRuntime(join(RUNTIME_ROOT, 'primary-runtime')))
+     await packagingStep(process.env.DSH_DESKTOP_PACKAGING_RUN_DIR, 'runtime:write-descriptor', async () => {
+diff --git a/apps/desktop/scripts/prepare-windows-installer.ps1 b/apps/desktop/scripts/prepare-windows-installer.ps1
+index 5195891033..c5f91bc09b 100644
+--- a/apps/desktop/scripts/prepare-windows-installer.ps1
++++ b/apps/desktop/scripts/prepare-windows-installer.ps1
+@@ -1,8 +1,9 @@
+ <# Compile the x86 DWM helper and raster assets embedded in the NSIS installer. #>
+ [CmdletBinding()]
+-param([string]$OutputDirectory, [switch]$TestProgress, [switch]$CompileProgressOnly)
++param([string]$OutputDirectory, [string]$AssetsDirectory, [switch]$TestProgress, [switch]$CompileProgressOnly)
+ $ErrorActionPreference = 'Stop'
+ $installerRoot = Join-Path $PSScriptRoot '../installer'
++if (-not $AssetsDirectory) { $AssetsDirectory = Join-Path $installerRoot 'assets' }
+ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PSScriptRoot '../.desktop-build/targets/win-x64/installer-ui' }
+ $output = [IO.Path]::GetFullPath($OutputDirectory)
+ New-Item -ItemType Directory -Force $output | Out-Null
+@@ -69,7 +70,7 @@ if ($TestProgress -or $CompileProgressOnly) {
+ }
+ Add-Type -AssemblyName System.Drawing
+ foreach ($asset in @('brand', 'brand-2x', 'brand-dark', 'brand-dark-2x', 'uninstaller-sidebar')) {
+-    $image = [Drawing.Image]::FromFile((Join-Path $installerRoot "assets/$asset.png"))
++    $image = [Drawing.Image]::FromFile((Join-Path $AssetsDirectory "$asset.png"))
+     try {
+         $bitmap = [Drawing.Bitmap]::new($image.Width, $image.Height, [Drawing.Imaging.PixelFormat]::Format24bppRgb)
+         try {
+diff --git a/apps/desktop/src/client/WelcomePage.tsx b/apps/desktop/src/client/WelcomePage.tsx
+index b367061732..8ca16a536e 100644
+--- a/apps/desktop/src/client/WelcomePage.tsx
++++ b/apps/desktop/src/client/WelcomePage.tsx
+@@ -1,4 +1,5 @@
+ /** Desktop welcome presentation; account and credential operations stay in the preload. */
++import { desktopProductBrand } from '../product-brand.ts'
+ import { useEffect, useRef, useState } from 'react'
+ import type { FormEvent } from 'react'
+ import { Toast } from '@deepseek-ai/dsh-client-ui-primitives/src/Toast.tsx'
+@@ -175,7 +176,9 @@ export function Welcome({ api }: { api: WelcomeApi }) {
+     {expiryNotice && <Toast text={m.welcomeSessionExpired} onDone={() => { setExpiryNotice(false) }} />}
+     <div className="titlebar" aria-hidden="true" />
+     <main className="welcome" aria-labelledby={heading}>
+-      <img className="brand" src="assets/welcome-brand.svg" alt={m.welcomeBrand} width="472" height="40" />
++      {desktopProductBrand() === undefined
++        ? <img className="brand" src="assets/welcome-brand.svg" alt={m.welcomeBrand} width="472" height="40" />
++        : <img className="brand" src="../lib/welcome/product-brand.svg" alt={m.welcomeBrand} width="472" height="40" />}
+       <div id="tagline" className="tagline" hidden={page !== 'entry'}>
+         <h1 id="welcome-heading"><span>{m.welcomeTaglineBefore}</span><em>{m.welcomeTaglineBrand}</em><span>{m.welcomeTaglineAfter}</span></h1>
+         <p id="welcome-description">{m.welcomeDescription}</p>
+diff --git a/apps/desktop/src/locale.ts b/apps/desktop/src/locale.ts
+index 050548e879..83e6c58fd2 100644
+--- a/apps/desktop/src/locale.ts
++++ b/apps/desktop/src/locale.ts
+@@ -1,5 +1,7 @@
+ /** Typed shell copy for every shipped language owned by the Electron shell. */
+ 
++import { desktopProductBrand, productMessages } from './product-brand.ts'
++
+ export const en = {
+   cliCommandMenu: 'Manage dsh Command…',
+   cliCommandTitle: 'Manage dsh Command',
+@@ -1539,12 +1541,13 @@ export interface DesktopLocale {
+ 
+ /** Resolve Electron's locale to one shipped Desktop dictionary. */
+ export function resolveDesktopLocale(locale: string): DesktopLocale {
++  const brand = desktopProductBrand()
+   const primary = locale.toLowerCase().split('-')[0]
+   if (primary !== undefined && Object.hasOwn(dictionaries, primary)) {
+     const id = primary as keyof typeof dictionaries
+-    return { id: id === 'zh' ? 'zh-CN' : id, messages: dictionaries[id] }
++    return { id: id === 'zh' ? 'zh-CN' : id, messages: brand === undefined ? dictionaries[id] : productMessages(dictionaries[id], brand.name) }
+   }
+-  return { id: 'en', messages: en }
++  return { id: 'en', messages: brand === undefined ? en : productMessages(en, brand.name) }
+ }
+ 
+ /**
+diff --git a/apps/desktop/src/main.ts b/apps/desktop/src/main.ts
+index dd3141228b..7324118a99 100644
+--- a/apps/desktop/src/main.ts
++++ b/apps/desktop/src/main.ts
+@@ -1,5 +1,6 @@
+ /** Electron shell: desktop project ownership, custom protocol, windows, and lifecycle. */
+ 
++import { desktopProductBrand } from './product-brand.ts'
+ import { installFileActions } from './file-actions.ts'
+ import { configurationFailure, channelSaveFailure, configurationMessage } from './update-configuration.ts'
+ import type { DesktopChannelState, DesktopChannelChangeResult } from '@deepseek-ai/dsh-client-ui-settings-general/types'
+@@ -243,6 +244,8 @@ function developmentHostInspectPort(enabled: boolean): number | undefined {
+  * @returns the sidebar fill hex for the active system color scheme.
+  */
+ function chromeFallbackFill(): string {
++  const brand = desktopProductBrand()
++  if (brand !== undefined) return nativeTheme.shouldUseDarkColors ? brand.darkBackground : brand.lightBackground
+   return nativeTheme.shouldUseDarkColors ? '#1b1b1c' : '#f9fafb'
+ }
+ 
+@@ -267,6 +270,10 @@ function createWindow(preload: string, show = false, primary = false): BrowserWi
+     minWidth: 520,
+     minHeight: 600,
+     show,
++    ...(desktopProductBrand() === undefined ? {} : {
++      icon: fileURLToPath(new URL('./product-icon.png', import.meta.url)),
++      backgroundColor: chromeFallbackFill(),
++    }),
+     ...(process.platform === 'win32' && primary ? {
+       titleBarStyle: 'hidden' as const,
+       titleBarOverlay: { height: WINDOWS_TITLEBAR_HEIGHT, color: chromeFallbackFill(),
+@@ -1128,10 +1135,11 @@ async function main(): Promise<void> {
+     updates.dispose()
+   })
+ 
+-  const applicationIconPath = development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
+-    : join(process.resourcesPath, 'icon.png')
++  const applicationIconPath = desktopProductBrand() !== undefined ? fileURLToPath(new URL('./product-icon.png', import.meta.url))
++    : development ? join(app.getAppPath(), 'resources', 'icon-windows.png')
++      : join(process.resourcesPath, 'icon.png')
+   app.setAboutPanelOptions({
+-    applicationName: 'DeepSeek Harness',
++    applicationName: desktopProductBrand()?.name ?? 'DeepSeek Harness',
+     applicationVersion: app.getVersion(),
+     // The release has no separate build number; omit Electron's bundle version.
+     version: '',
+@@ -1213,7 +1221,8 @@ async function main(): Promise<void> {
+     tray?.relabel()
+   }
+   refreshApplicationMenu()
+-  const trayIconPath = development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
++  const trayIconPath = desktopProductBrand()?.windowsTrayIcon !== undefined ? fileURLToPath(new URL('./product-tray.ico', import.meta.url))
++    : development ? join(app.getAppPath(), 'resources', 'tray-windows.ico') : join(process.resourcesPath, 'tray.ico')
+   if (process.platform === 'win32') {
+     // The tray is the way back to a hidden window; without it, relaunching the application still focuses it.
+     try {
+@@ -1522,7 +1531,7 @@ async function main(): Promise<void> {
+   const policyInput: unknown = app.isPackaged
+     ? ('dshMandatoryUpdatePolicy' in manifest ? manifest.dshMandatoryUpdatePolicy : undefined)
+     : developmentPolicy === undefined ? undefined : JSON.parse(developmentPolicy) as unknown
+-  const policyConfig = resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
++  const policyConfig = desktopProductBrand()?.manualUpdates === true ? undefined : resolveDesktopPolicyConfig(policyInput, !app.isPackaged)
+   if (policyConfig !== undefined) {
+     if (policyConfig.authentication === 'feishu-test') {
+       policyAuth = new DesktopPolicyTestAuth(policyConfig.origin, policyConfig.allowedAuthOrigins, locale,
+diff --git a/apps/desktop/src/update-coordinator.ts b/apps/desktop/src/update-coordinator.ts
+index 475a560667..2c0451ee05 100644
+--- a/apps/desktop/src/update-coordinator.ts
++++ b/apps/desktop/src/update-coordinator.ts
+@@ -1,5 +1,6 @@
+ /** User-authorized downloads and separate installation of one version-bound Desktop release. */
+ 
++import { desktopProductBrand } from './product-brand.ts'
+ import { existsSync } from 'node:fs'
+ import { join } from 'node:path'
+ import { app } from 'electron'
+@@ -61,7 +62,7 @@ export class DesktopUpdateCoordinator {
+     private readonly publish: (state: DesktopUpdateState) => DesktopUpdateState,
+     private readonly beforeRestart: () => Promise<boolean>,
+     private readonly updater: AppUpdater = autoUpdater,
+-    private readonly enabled: () => boolean = () => app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
++    private readonly enabled: () => boolean = () => desktopProductBrand()?.manualUpdates !== true && app.isPackaged && existsSync(join(process.resourcesPath, 'app-update.yml')),
+     private readonly currentVersion: () => string = () => app.getVersion(),
+     private readonly downloadResult?: (success: boolean, reason?: string) => void,
+     private channel: DesktopUpdateChannel = 'nightly',
+diff --git a/apps/desktop/src/welcome-window.ts b/apps/desktop/src/welcome-window.ts
+index 61fda9e36a..2e99a66745 100644
+--- a/apps/desktop/src/welcome-window.ts
++++ b/apps/desktop/src/welcome-window.ts
+@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
+ import { app, BrowserWindow, ipcMain, type BrowserWindowConstructorOptions, type IpcMainInvokeEvent } from 'electron'
+ import type { DesktopLocale } from './locale.ts'
+ import { WELCOME_IPC, type WelcomeOperations } from './welcome-api.ts'
++import { desktopProductBrand } from './product-brand.ts'
+ 
+ /**
+  * Resolve the fixed-size welcome window's native material and controls.
+@@ -24,6 +25,7 @@ export function welcomeWindowOptions(platform: NodeJS.Platform, locale: DesktopL
+     fullscreenable: false,
+     show: false,
+     title: locale.messages.welcomeTitle,
++    ...(desktopProductBrand() === undefined ? {} : { icon: fileURLToPath(new URL('./product-icon.png', import.meta.url)) }),
+     backgroundColor: platform === 'darwin' || platform === 'win32' ? '#00000000' : '#FFFFFF',
+     ...(platform === 'darwin' ? {
+       titleBarStyle: 'hidden',
+diff --git a/apps/desktop/tsconfig.client.json b/apps/desktop/tsconfig.client.json
+index eb17ebe087..39ea0afd6b 100644
+--- a/apps/desktop/tsconfig.client.json
++++ b/apps/desktop/tsconfig.client.json
+@@ -7,7 +7,8 @@
+   "include": [
+     "src/client",
+     "src/welcome-api.ts",
+-    "src/locale.ts"
++    "src/locale.ts",
++    "src/product-brand.ts"
+   ],
+   "references": [
+     {
+diff --git a/apps/desktop/tsdown.config.ts b/apps/desktop/tsdown.config.ts
+index 40ed1a0316..9919bb652f 100644
+--- a/apps/desktop/tsdown.config.ts
++++ b/apps/desktop/tsdown.config.ts
+@@ -1,4 +1,5 @@
+ import { defineConfig } from 'tsdown'
++import { readProductBrand } from '../../scripts/product-brand.mjs'
+ import { build } from 'vite'
+ import { fileURLToPath } from 'node:url'
+ import { readFileSync } from 'node:fs'
+@@ -30,7 +31,17 @@ const clientVersion = clientEnvironment.DSH_CLIENT_VERSION
+ if (clientVersion === undefined) throw new Error('desktop build: the client environment carries no DSH_CLIENT_VERSION')
+ 
+ /** Inline the one public build value the Node entry reads; every other variable stays a runtime lookup. */
+-const clientVersionDefine = { 'process.env.DSH_CLIENT_VERSION': JSON.stringify(clientVersion) }
++const productBrand = readProductBrand()
++const desktopBrand = productBrand === undefined ? undefined : {
++  name: productBrand.name, manualUpdates: productBrand.manualUpdates,
++  lightBackground: productBrand.lightBackground, darkBackground: productBrand.darkBackground,
++  windowsIcon: 'product-icon.png', windowsTrayIcon: productBrand.windowsTrayIcon === undefined ? undefined : 'product-tray.ico',
++}
++const brandDefine = { '__DSH_PRODUCT_BRAND__': desktopBrand === undefined ? 'undefined' : JSON.stringify(desktopBrand) }
++const clientVersionDefine = {
++  'process.env.DSH_CLIENT_VERSION': JSON.stringify(clientVersion),
++  ...brandDefine,
++}
+ 
+ export default defineConfig([
+   {
+@@ -57,11 +68,18 @@ export default defineConfig([
+     plugins: [packagedImportsPlugin(mainProcessImports)],
+     define: clientVersionDefine,
+     onSuccess: async () => {
++      if (productBrand !== undefined) {
++        const { copyFile } = await import('node:fs/promises')
++        await copyFile(productBrand.windowsIcon, new URL('./lib/product-icon.png', import.meta.url))
++        if (productBrand.windowsTrayIcon !== undefined) await copyFile(productBrand.windowsTrayIcon, new URL('./lib/product-tray.ico', import.meta.url))
++      }
+       await build({
+         configFile: false,
+         plugins: [{
+           name: 'desktop-shell-assets',
+           async generateBundle() {
++            this.emitFile({ type: 'asset', fileName: 'product-theme.css', source: productBrand?.desktopStyles === undefined ? '' : await readFile(productBrand.desktopStyles) })
++            if (productBrand?.welcomeLogo !== undefined) this.emitFile({ type: 'asset', fileName: 'product-brand.svg', source: await readFile(productBrand.welcomeLogo) })
+             for (const name of ['design-platform.css', 'brand-font.css', 'montserrat-regular.woff2', 'montserrat-light.woff2', 'montserrat-medium.woff2', 'Montserrat-OFL.txt']) {
+               this.emitFile({
+                 type: 'asset',
+@@ -73,7 +91,7 @@ export default defineConfig([
+         }],
+         root: fileURLToPath(new URL('.', import.meta.url)),
+         esbuild: { jsx: 'automatic' },
+-        define: { 'process.env.NODE_ENV': JSON.stringify('production') },
++        define: { 'process.env.NODE_ENV': JSON.stringify('production'), ...brandDefine },
+         build: {
+           outDir: 'lib/welcome',
+           emptyOutDir: true,
+@@ -100,6 +118,7 @@ export default defineConfig([
+     // Sandboxed Electron preloads run as CommonJS even though the application package is ESM.
+     entry: { [name]: `lib/types/${name}.js` },
+     plugins: [packagedImportsPlugin(preloadImports)],
++    define: brandDefine,
+     outDir: 'lib',
+     format: 'cjs' as const,
+     codeSplitting: false,
+diff --git a/apps/web/vite.config.ts b/apps/web/vite.config.ts
+index 984f53cb20..0965445630 100644
+--- a/apps/web/vite.config.ts
++++ b/apps/web/vite.config.ts
+@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
+ import { resolve } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+ import { defineConfig } from 'vite'
++import { readProductBrand } from '../../scripts/product-brand.mjs'
+ import type { Plugin } from 'vite'
+ import react from '@vitejs/plugin-react'
+ import { clientBuildEnvironmentDefines } from '../../scripts/client-build-environment.ts'
+@@ -26,6 +27,7 @@ function clientDocumentTitle(): Plugin {
+     name: 'dsh-client-document-title',
+     transformIndexHtml(html) {
+       return html.replace('<title>DSH Local Build</title>', `<title>${title}</title>`)
++        .replace('content="DSH"', `content="${escapeHtmlText(readProductBrand()?.shortName ?? 'DSH')}"`)
+     },
+   }
+ }
+@@ -166,7 +168,10 @@ function npmPackageOf(id: string): string | undefined {
+   return first
+ }
+ 
++const productBrand = readProductBrand()
++
+ export default defineConfig({
++  publicDir: productBrand?.assetsDirectory ?? 'public',
+   // Relative asset URLs: preview.html mounts the same output under any base
+   // directory, and the served index resolves identically from the site root.
+   base: './',
+diff --git a/docs/development.i18n.yaml b/docs/development.i18n.yaml
+index 591bcdd5ce..ae336cef90 100644
+--- a/docs/development.i18n.yaml
++++ b/docs/development.i18n.yaml
+@@ -18,8 +18,11 @@
+   en: bb2bab0ef17bfc32
+   zh: 8b7cf7e9e703e6af
+ /development-guide/contributor-reference:
+-  en: 3221d1076554001f
+-  zh: 29f166be6a5c04d9
++  en: e3d99c3f4b37dd0c
++  zh: 6cb578fe16ae0fd6
++/development-guide/contributor-reference/product-branding:
++  en: c52a4091cabdb592
++  zh: 18bc8d7ea61d61c6
+ /development-guide/contributor-reference/typescript-project-layout:
+   en: 16d67911ecaa50d3
+   zh: f5259b0fbf022db3
+diff --git a/docs/development.md b/docs/development.md
+index 9aec6e601d..99257ca54f 100644
+--- a/docs/development.md
++++ b/docs/development.md
+@@ -54,6 +54,16 @@ Setup is complete when `pnpm run typecheck` exits successfully.
+ 
+ ## Contributor reference
+ 
++<a id="product-branding"></a>
++
++### Product branding
++
++Set `DSH_BRAND_CONFIG` to an absolute JSON file path for a custom Web and Desktop build. [ProductBrand](../scripts/product-brand.d.mts) lists the fields; artwork paths resolve relative to that file. Invalid or missing artwork stops the build. Without this variable, builds retain DSH presentation. Brand builds embed the title, application-owned dictionary name and boot palette; they leave model/provider names and user data unchanged.
++
++The optional runtime UI package and patch are copied into the prepared Desktop runtime before its integrity inventory is sealed. The UI package must contain its built `lib` directory; the patch composes it into the Web bundle. Desktop branding changes display names and artwork, including an optional tray icon, installer PNG directory and NSIS theme macros (`ProductInstallerResolveTheme` and `ProductInstallerControlColors HANDLE`); absent overrides retain defaults. `manualUpdates` prevents official update checks. Keep Electron's internal name, application identifier and data paths stable when retaining existing installations.
++
++For an unpackaged Desktop run, `DSH_DESKTOP_PATCH` selects one additional Loader patch file, applied after the profile configuration. Missing files stop startup. Keep custom plugins, assets, build commands and compatibility records in the separate customization project.
++
+ ### TypeScript project layout
+ 
+ The repository uses isolated Host and Client aggregates. An ordinary package is registered in exactly one aggregate: Host packages in `tsconfig.host.json` and Client packages in `tsconfig.client.json`; three packages (`host/webserver`, `compaction/compaction`, `typert/registry`) are referenced by both aggregates as shared leaves so each side type-checks the same source.
+diff --git a/docs/development.zh.md b/docs/development.zh.md
+index 92f0b71b99..2eec528a12 100644
+--- a/docs/development.zh.md
++++ b/docs/development.zh.md
+@@ -58,6 +58,16 @@ pnpm run typecheck
+ 
+ <a id="typescript-project-layout"></a>
+ 
++<a id="product-branding"></a>
++
++### 产品品牌定制
++
++自定义 Web 与桌面构建时，将 `DSH_BRAND_CONFIG` 设为 JSON 文件的绝对路径。[ProductBrand](../scripts/product-brand.d.mts) 列出了配置字段；素材路径相对于该文件解析。无效或缺失的素材会终止构建。不设置此变量时，构建保留 DSH 展示。品牌构建嵌入标题、应用自有词典中的产品名和启动配色，保留模型与供应商名称及用户数据。
++
++可选的运行时 UI 包和配置补丁会在桌面运行时完整性清单生成前复制到准备目录。UI 包必须包含构建后的 `lib` 目录；补丁将其组合到 Web bundle 中。桌面品牌配置调整展示名称与素材，可选项包括托盘图标、安装器 PNG 目录及 NSIS 主题宏（`ProductInstallerResolveTheme` 和 `ProductInstallerControlColors HANDLE`）；未设置的覆盖项沿用默认值。`manualUpdates` 阻止官方更新检查。保留已有安装时，保持 Electron 内部名称、应用标识和数据路径稳定。
++
++运行未打包的桌面程序时，`DSH_DESKTOP_PATCH` 可指定一个额外的 Loader 补丁文件，在 profile 配置之后应用。文件缺失会终止启动。定制插件、素材、构建命令和兼容记录放在独立定制项目中。
++
+ ### TypeScript 项目布局
+ 
+ 仓库使用相互隔离的 Host 与 Client aggregate。普通包只登记进其中一个 aggregate；Host 包进入 `tsconfig.host.json`，Client 包进入 `tsconfig.client.json`；`host/webserver`、`compaction/compaction` 与 `typert/registry` 三个包被两个 aggregate 同时引用，作为共享 leaf，让两侧对同一份源码做类型检查。
+diff --git a/packages/client/locale/README.i18n.yaml b/packages/client/locale/README.i18n.yaml
+index a90c3133e5..48ea162414 100644
+--- a/packages/client/locale/README.i18n.yaml
++++ b/packages/client/locale/README.i18n.yaml
+@@ -15,8 +15,8 @@
+   en: d152484eb41ac6b4
+   zh: bda879a892f240f0
+ /deepseek-ai-dsh-client-locale/use-this-package:
+-  en: 7fedfbcbc3ad8cea
+-  zh: e29ba5230e0b9ecb
++  en: 01c1f1892c2c9c4a
++  zh: 33b246f01717be2d
+ /deepseek-ai-dsh-client-locale/use-this-package/choosing-a-language:
+   en: 2b82458e185ba321
+   zh: e55a7e709a3f0158
+diff --git a/packages/client/locale/README.md b/packages/client/locale/README.md
+index 0ed329b47a..bfc170c7e1 100644
+--- a/packages/client/locale/README.md
++++ b/packages/client/locale/README.md
+@@ -25,6 +25,8 @@ Use `dsh-client-locale` to switch the web GUI between the shipped English, Chine
+ <a id="use-this-package"></a>
+ ## Use this package
+ 
++Custom product builds can substitute the application name inside dictionary templates through the [product branding configuration](../../../docs/development.md#product-branding). Substitution precedes parameter interpolation, so user-supplied values and provider names are preserved. The source dictionaries and ordinary DSH builds retain their original text.
++
+ Use it wherever the web GUI needs a language switch or translated copy: the shipped settings row covers users, and plugin authors register their own dictionaries. Nothing needs configuration to mount — the package activates with the client tree.
+ 
+ ### Choosing a language
+diff --git a/packages/client/locale/README.zh.md b/packages/client/locale/README.zh.md
+index 4c2d8037ed..60f4075dda 100644
+--- a/packages/client/locale/README.zh.md
++++ b/packages/client/locale/README.zh.md
+@@ -25,6 +25,8 @@ kind: "package-reference"
+ <a id="use-this-package"></a>
+ ## 使用本包
+ 
++自定义产品构建可通过[产品品牌配置](../../../docs/development.zh.md#product-branding)替换词典模板中的应用名称。替换在参数插值之前执行，因此保留用户传入的值和供应商名称。源词典与普通 DSH 构建保留原文。
++
+ 只要 web GUI 需要语言切换或翻译文案就使用它：已发布的设置行覆盖用户侧，插件作者则注册自己的字典。挂载无需任何配置——本包随客户端树一起激活。
+ 
+ ### 选择语言
+diff --git a/packages/client/locale/src/client/index.ts b/packages/client/locale/src/client/index.ts
+index 3ba1bae29b..a4dc085492 100644
+--- a/packages/client/locale/src/client/index.ts
++++ b/packages/client/locale/src/client/index.ts
+@@ -481,7 +481,10 @@ export class LocaleRuntime {
+     const locales = this.dicts.get(ns)
+     for (const locale of chain) {
+       const value = locales?.get(localeKey(locale))?.[key]
+-      if (value !== undefined) return value
++      if (value !== undefined) {
++        const productName = process.env.DSH_CLIENT_PRODUCT_NAME
++        return productName === undefined ? value : value.replaceAll('DeepSeek Harness', productName)
++      }
+     }
+     return undefined
+   }
+diff --git a/packages/client/ui-theme/README.i18n.yaml b/packages/client/ui-theme/README.i18n.yaml
+index 3fb0fd59e0..dd6a52e11c 100644
+--- a/packages/client/ui-theme/README.i18n.yaml
++++ b/packages/client/ui-theme/README.i18n.yaml
+@@ -15,8 +15,8 @@
+   en: d152484eb41ac6b4
+   zh: 09388d293f9be9cb
+ /deepseek-ai-dsh-client-ui-theme/use-this-package:
+-  en: 5a279269e31713c1
+-  zh: dcd5c31fbdfd63e2
++  en: 2473edda5dc0aa2b
++  zh: 6d455b3def2e6439
+ /deepseek-ai-dsh-client-ui-theme/use-this-package/appearance-and-font-size:
+   en: 7dff01929847efd1
+   zh: ec04b4c4485aba96
+diff --git a/packages/client/ui-theme/README.md b/packages/client/ui-theme/README.md
+index 2eab7c3663..0c298bdd67 100644
+--- a/packages/client/ui-theme/README.md
++++ b/packages/client/ui-theme/README.md
+@@ -25,6 +25,8 @@ English | [中文](README.zh.md)
+ <a id="use-this-package"></a>
+ ## Use this package
+ 
++Custom product builds can select pre-plugin canvas colors through the [product branding configuration](../../../docs/development.md#product-branding). Client theme overrides remain owned by their registering plugins and do not change the user's saved appearance, fonts or font sizes.
++
+ Users switch the color scheme, font sizes, and fonts from rows in Settings (General section); the choices persist across restarts in every authenticated browser. Feature plugins consume the current snapshot through `ctx.theme` and read the `--dsw-*` tokens in CSS; they do not manage theme state themselves.
+ 
+ ### Appearance and font size
+diff --git a/packages/client/ui-theme/README.zh.md b/packages/client/ui-theme/README.zh.md
+index 5eb7b7bd3e..a58ac4a3d0 100644
+--- a/packages/client/ui-theme/README.zh.md
++++ b/packages/client/ui-theme/README.zh.md
+@@ -25,6 +25,8 @@ kind: "package-reference"
+ <a id="use-this-package"></a>
+ ## 使用本包
+ 
++自定义产品构建可通过[产品品牌配置](../../../docs/development.zh.md#product-branding)选择插件启动前的画布颜色。客户端主题覆盖仍由注册它们的插件管理，不改变用户已保存的外观、字体或字号。
++
+ 用户从设置（「通用」分区）的各行中切换配色方案、字号与字体；在每个已认证浏览器中，这些选择都会跨重启持久化。功能插件通过 `ctx.theme` 消费当前快照，并在 CSS 中读取 `--dsw-*` token；它们不自行管理主题状态。
+ 
+ ### 外观与字号
+diff --git a/packages/client/ui-theme/src/boot-theme.ts b/packages/client/ui-theme/src/boot-theme.ts
+index fa7f1c281e..34670da964 100644
+--- a/packages/client/ui-theme/src/boot-theme.ts
++++ b/packages/client/ui-theme/src/boot-theme.ts
+@@ -12,8 +12,8 @@ import {
+   type FontFamilies, type FontSizes, type ThemePreference,
+ } from './theme-settings.ts'
+ 
+-const LIGHT_BACKGROUND = '#fff'
+-const DARK_BACKGROUND = '#151517'
++const LIGHT_BACKGROUND = process.env.DSH_CLIENT_BOOT_LIGHT ?? '#fff'
++const DARK_BACKGROUND = process.env.DSH_CLIENT_BOOT_DARK ?? '#151517'
+ 
+ /** CSS that colors the document canvas before any script executes. */
+ function bootThemeStyle(preference: ThemePreference): string {
+diff --git a/packages/client/web/README.i18n.yaml b/packages/client/web/README.i18n.yaml
+index e9cb6261e0..1fc92fe5c9 100644
+--- a/packages/client/web/README.i18n.yaml
++++ b/packages/client/web/README.i18n.yaml
+@@ -21,8 +21,8 @@
+   en: f3b01aa878764e5c
+   zh: f02eab65d441bfe0
+ /deepseek-ai-dsh-client-web/use-this-package/the-boot-page:
+-  en: 0e77a7d3fc52f5a7
+-  zh: 9da54cac5839906e
++  en: 48bc5dacdd5f45a6
++  zh: 57c158c4d6f26b8e
+ /deepseek-ai-dsh-client-web/use-this-package/the-shared-module-table:
+   en: 33b256e108a7bd6a
+   zh: 3b2b1368721803b7
+diff --git a/packages/client/web/README.md b/packages/client/web/README.md
+index a24e7f5127..f23930c96a 100644
+--- a/packages/client/web/README.md
++++ b/packages/client/web/README.md
+@@ -39,6 +39,8 @@ Boot runs in two stages: the module stage adopts the parser-loaded bootstrap bat
+ 
+ ### The boot page
+ 
++The pre-plugin wordmark uses the build-selected `DSH_CLIENT_PRODUCT_NAME` when present, including on failure pages; ordinary builds retain `HARNESS`. [Product branding](../../../docs/development.md#product-branding) supplies this value from the shared brand document.
++
+ The boot page uses plain DOM and local CSS, so bundle and plugin-activation failures remain visible: it shows one spinner node whose CSS arc grows as entries activate. The spinner and its animation phase persist until the full UI replaces the boot page. When a required plugin fails import or activation, the page names every inactive plugin with the reason (missing service, import failure, or activation error) and marks the required ones, instead of a blank page. An optional plugin's failure appears in one console warning and does not stop the application. The console contains the original import error.
+ 
+ <a id="the-shared-module-table"></a>
+diff --git a/packages/client/web/README.zh.md b/packages/client/web/README.zh.md
+index dc491887e9..9e45fc6e03 100644
+--- a/packages/client/web/README.zh.md
++++ b/packages/client/web/README.zh.md
+@@ -39,6 +39,8 @@ Web 和 Desktop 的数学公式渲染要求支持 WOFF2。[Web 构建](../../../
+ 
+ ### 启动页
+ 
++插件加载前的字标使用构建时指定的 `DSH_CLIENT_PRODUCT_NAME`，失败页面也保留该名称；普通构建沿用 `HARNESS`。[产品品牌](../../../docs/development.zh.md#product-branding)从统一品牌配置提供该值。
++
+ 启动页只使用原生 DOM 与本地 CSS，因此 bundle 与插件激活失败保持可见：它显示一个 spinner 节点，其 CSS 圆弧随 entry 激活而增长。spinner 及其动画相位会一直保留，直到完整 UI 替换启动页。必需插件导入或激活失败时，页面按名称列出每个未激活插件及原因（缺失服务、导入失败或激活错误），并标出必需项，而不是白屏。可选插件的失败只出现在一条控制台警告中，不会阻止应用启动。控制台包含原始导入错误。
+ 
+ <a id="the-shared-module-table"></a>
+diff --git a/packages/client/web/src/boot-page.ts b/packages/client/web/src/boot-page.ts
+index 23b27ad4bc..f2243f21e7 100644
+--- a/packages/client/web/src/boot-page.ts
++++ b/packages/client/web/src/boot-page.ts
+@@ -34,7 +34,7 @@ export class BootPage {
+     this.root = div(css.boot)
+     this.root.dataset.dshBoot = ''
+     this.card = div(css.card)
+-    this.wordmark = div(css.wordmark, 'HARNESS')
++    this.wordmark = div(css.wordmark, process.env.DSH_CLIENT_PRODUCT_NAME ?? 'HARNESS')
+     this.spinner = div(css.spinner)
+     this.spinner.dataset.dshBootSpinner = ''
+     this.hint = div(css.hint, 'Loading plugins…')
+diff --git a/packages/client/web/tests/boot-page.client.spec.ts b/packages/client/web/tests/boot-page.client.spec.ts
+index 33612e8a47..d7df140895 100644
+--- a/packages/client/web/tests/boot-page.client.spec.ts
++++ b/packages/client/web/tests/boot-page.client.spec.ts
+@@ -1,8 +1,8 @@
+ // @vitest-environment jsdom
+-import { afterEach, describe, expect, it } from 'vitest'
++import { afterEach, describe, expect, it, vi } from 'vitest'
+ import { BootPage } from '../src/boot-page.ts'
+ 
+-afterEach(() => { document.body.innerHTML = '' })
++afterEach(() => { document.body.innerHTML = ''; vi.unstubAllEnvs() })
+ 
+ function mount() {
+   const el = document.createElement('div')
+@@ -33,6 +33,23 @@ describe('BootPage', () => {
+     expect(el.textContent).not.toContain('Failed to load plugins')
+   })
+ 
++  it('uses the build-selected product name before plugins activate', () => {
++    vi.stubEnv('DSH_CLIENT_PRODUCT_NAME', '叙芽岛')
++    const { el } = mount()
++    expect(el.textContent).toContain('叙芽岛')
++    expect(el.textContent).not.toContain('HARNESS')
++    expect(el.querySelector('[data-dsh-boot-spinner]')).not.toBeNull()
++  })
++
++  it('retains the build-selected product name when plugin loading fails', () => {
++    vi.stubEnv('DSH_CLIENT_PRODUCT_NAME', '叙芽岛')
++    const { el, page } = mount()
++    page.fail('Plugin activation failed')
++    expect(el.textContent).toContain('叙芽岛')
++    expect(el.textContent).not.toContain('HARNESS')
++    expect(el.textContent).toContain('Plugin activation failed')
++  })
++
+   it('lists failed entries', () => {
+     const { el, page } = mount()
+     page.setState('@deepseek-ai/dsh-client-ui-layout', 'failed')
+diff --git a/scripts/build.ts b/scripts/build.ts
+index d18d157e26..a06d65a456 100644
+--- a/scripts/build.ts
++++ b/scripts/build.ts
+@@ -178,7 +178,9 @@ async function main(): Promise<number> {
+   }
+ 
+   const repositoryEnvironment = repositoryClientBuildEnvironment(root, process.env)
+-  const clientEnvironment = resolveClientBuildEnvironment(repositoryEnvironment, profile ?? process.env[CLIENT_BUILD_PROFILE_SELECTOR])
++  const clientEnvironment = resolveClientBuildEnvironment(
++    { ...process.env, ...repositoryEnvironment }, profile ?? process.env[CLIENT_BUILD_PROFILE_SELECTOR],
++  )
+   const environment = environmentOverlay(process.env, clientBuildProcessEnvironment(process.env, clientEnvironment))
+   rmSync(resolve(root, CLIENT_BUILD_RECORD_PATH), { force: true })
+   const gates = buildGates(root, scope, environment, serial)
+diff --git a/scripts/client-build-environment.ts b/scripts/client-build-environment.ts
+index 6eed371b08..b48f4c19e8 100644
+--- a/scripts/client-build-environment.ts
++++ b/scripts/client-build-environment.ts
+@@ -1,3 +1,4 @@
++import { readProductBrand } from './product-brand.mjs'
+ import { createHash } from 'node:crypto'
+ import { execFileSync, spawnSync } from 'node:child_process'
+ import {
+@@ -191,7 +192,14 @@ export function resolveClientBuildEnvironment(
+   environment: NodeJS.ProcessEnv,
+   profile: string | undefined = environment[CLIENT_BUILD_PROFILE_SELECTOR],
+ ): ClientBuildEnvironment {
+-  if (profile === undefined) return clientBuildEnvironment(environment)
++  const brand = readProductBrand(environment)
++  const presentation = brand === undefined ? {} : {
++    DSH_CLIENT_TITLE: brand.name,
++    DSH_CLIENT_PRODUCT_NAME: brand.name,
++    DSH_CLIENT_BOOT_LIGHT: brand.lightBackground,
++    DSH_CLIENT_BOOT_DARK: brand.darkBackground,
++  }
++  if (profile === undefined) return { ...clientBuildEnvironment(environment), ...presentation }
+   if (profile === 'official' || profile === 'local') {
+     const commitHash = environment[CLIENT_COMMIT_HASH_VARIABLE]
+     const version = environment[CLIENT_VERSION_VARIABLE]
+@@ -208,6 +216,7 @@ export function resolveClientBuildEnvironment(
+         DSH_CLIENT_BUILD_PROFILE: 'local',
+         ...(environment.DSH_CLIENT_GIT_DIRTY === 'true' ? { DSH_CLIENT_GIT_DIRTY: 'true' } : {}),
+       }),
++      ...presentation,
+     }
+   }
+   throw new Error(`unknown client build profile ${JSON.stringify(profile)}; expected "official" or "local"`)
+diff --git a/apps/desktop/src/product-brand.ts b/apps/desktop/src/product-brand.ts
+new file mode 100644
+index 0000000000..a30c07e195
+--- /dev/null
++++ b/apps/desktop/src/product-brand.ts
+@@ -0,0 +1,32 @@
++/** Compile-time desktop presentation; internal application identity and data locations remain independent. */
++declare const __DSH_PRODUCT_BRAND__: DesktopProductBrand | undefined
++
++/** Desktop presentation embedded by the validated build configuration. */
++export interface DesktopProductBrand {
++  name: string
++  manualUpdates: boolean
++  lightBackground: string
++  darkBackground: string
++  windowsIcon: string
++  windowsTrayIcon?: string
++}
++
++/** Read the presentation selected when this artifact was built.
++ * @returns Custom presentation, or undefined for an ordinary build.
++ */
++export function desktopProductBrand(): DesktopProductBrand | undefined {
++  return typeof __DSH_PRODUCT_BRAND__ === 'undefined' ? undefined : __DSH_PRODUCT_BRAND__
++}
++
++/** Apply product-name copy while retaining the source dictionary and service identities.
++ * @param messages Source dictionary.
++ * @param name Product display name.
++ * @returns A new dictionary with application-owned name placeholders replaced.
++ */
++export function productMessages<T extends Record<string, string>>(messages: T, name: string): T {
++  const result = { ...messages }
++  for (const [key, value] of Object.entries(messages)) {
++    Object.assign(result, { [key]: value.replaceAll('DeepSeek Harness', name) })
++  }
++  return result
++}
+diff --git a/apps/desktop/tests/product-brand.spec.ts b/apps/desktop/tests/product-brand.spec.ts
+new file mode 100644
+index 0000000000..69aad0451c
+--- /dev/null
++++ b/apps/desktop/tests/product-brand.spec.ts
+@@ -0,0 +1,11 @@
++/** Custom branding preserves the original dictionaries and third-party service names. */
++import { expect, it } from 'vitest'
++import { desktopProductBrand, productMessages } from '../src/product-brand.ts'
++it('keeps the ordinary source build unbranded', () => {
++  expect(desktopProductBrand()).toBeUndefined()
++})
++it('replaces application names without changing service names or the input dictionary', () => {
++  const original = { app: 'About DeepSeek Harness', service: 'DeepSeek API', command: 'dsh' }
++  expect(productMessages(original, '叙芽岛')).toEqual({ app: 'About 叙芽岛', service: 'DeepSeek API', command: 'dsh' })
++  expect(original.app).toBe('About DeepSeek Harness')
++})
+diff --git a/scripts/product-brand.d.mts b/scripts/product-brand.d.mts
+new file mode 100644
+index 0000000000..23ad82c3cc
+--- /dev/null
++++ b/scripts/product-brand.d.mts
+@@ -0,0 +1,30 @@
++/** Validated local presentation consumed by the Web and desktop build tools. */
++export interface ProductBrand {
++  name: string
++  shortName: string
++  artifactName: string
++  lightBackground: string
++  darkBackground: string
++  manualUpdates: boolean
++  favicon: string
++  windowsIcon: string
++  windowsTrayIcon?: string
++  installerAssets?: string
++  installerTheme?: string
++  assetsDirectory: string
++  welcomeLogo?: string
++  desktopStyles?: string
++  runtimeUiPackage?: string
++  runtimePatch?: string
++}
++/** Read an optional brand document; reject incomplete configuration before building.
++ * @param env Build environment.
++ * @returns Validated brand or undefined for an ordinary DSH build.
++ */
++export function readProductBrand(env?: NodeJS.ProcessEnv): ProductBrand | undefined
++/** Copy the built extension and compose its YAML before runtime sealing.
++ * @param root Prepared runtime directory.
++ * @param env Brand build environment.
++ * @returns Nothing.
++ */
++export function stageProductBrandRuntime(root: string, env?: NodeJS.ProcessEnv): void
+diff --git a/scripts/product-brand.mjs b/scripts/product-brand.mjs
+new file mode 100644
+index 0000000000..4ef16f3feb
+--- /dev/null
++++ b/scripts/product-brand.mjs
+@@ -0,0 +1,69 @@
++/** Read optional product artwork for a source build; omitted configuration preserves DSH. */
++import { readFileSync, existsSync, cpSync, mkdirSync, writeFileSync } from 'node:fs'
++import { dirname, resolve } from 'node:path'
++
++/** Resolve and validate a local JSON brand document.
++ * @param {NodeJS.ProcessEnv} [env] Build environment.
++ * @returns {import('./product-brand.d.mts').ProductBrand | undefined} Validated paths and presentation.
++ */
++export function readProductBrand(env = process.env) {
++  if (env.DSH_BRAND_CONFIG === undefined) return undefined
++  const file = resolve(env.DSH_BRAND_CONFIG)
++  const value = JSON.parse(readFileSync(file, 'utf8'))
++  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('product brand: expected a JSON object')
++  for (const key of ['name', 'shortName', 'artifactName', 'favicon', 'windowsIcon', 'assetsDirectory']) {
++    if (typeof value[key] !== 'string' || value[key].trim() === '') throw new Error('product brand: missing '+key)
++  }
++  if (!/^[a-z0-9][a-z0-9-]*$/.test(value.artifactName)) throw new Error('product brand: artifactName must be a lowercase filename stem')
++  for (const key of ['lightBackground','darkBackground']) {
++    if (typeof value[key] !== 'string' || !/^#[0-9a-f]{6}$/i.test(value[key])) throw new Error('product brand: invalid '+key)
++  }
++  if (typeof value.manualUpdates !== 'boolean') throw new Error('product brand: manualUpdates must be boolean')
++  const paths = Object.fromEntries(['favicon','windowsIcon','assetsDirectory'].map(key => {
++    const path=resolve(dirname(file),value[key])
++    if (!existsSync(path)) throw new Error('product brand: missing '+path)
++    return [key,path]
++  }))
++  if ((value.runtimeUiPackage === undefined) !== (value.runtimePatch === undefined)) throw new Error('product brand: runtimeUiPackage and runtimePatch must be supplied together')
++  const optionalPaths = Object.fromEntries(['welcomeLogo', 'desktopStyles', 'runtimeUiPackage', 'runtimePatch', 'windowsTrayIcon', 'installerAssets', 'installerTheme'].map(key => {
++    if (value[key] === undefined) return [key, undefined]
++    if (typeof value[key] !== 'string' || value[key].trim() === '') throw new Error('product brand: invalid '+key)
++    const path = resolve(dirname(file), value[key])
++    if (!existsSync(path)) throw new Error('product brand: missing '+path)
++    return [key, path]
++  }))
++  if (optionalPaths.installerAssets !== undefined) {
++    for (const name of ['brand', 'brand-2x', 'brand-dark', 'brand-dark-2x', 'uninstaller-sidebar']) {
++      if (!existsSync(resolve(optionalPaths.installerAssets, name+'.png'))) throw new Error('product brand: missing installer artwork '+name)
++    }
++  }
++  return { name:value.name, shortName:value.shortName, artifactName:value.artifactName,
++    lightBackground:value.lightBackground,darkBackground:value.darkBackground,
++    manualUpdates:value.manualUpdates,favicon:paths.favicon,windowsIcon:paths.windowsIcon,assetsDirectory:paths.assetsDirectory,
++    ...optionalPaths }
++}
++
++/** Copy built extension bytes before the runtime inventory is sealed.
++ * @param {string} root Prepared runtime with its own node_modules.
++ * @param {NodeJS.ProcessEnv} [env] Brand build environment.
++ * @returns {void}
++ */
++export function stageProductBrandRuntime(root, env = process.env) {
++  const brand = readProductBrand(env)
++  if (brand?.runtimeUiPackage === undefined && brand?.runtimePatch === undefined) return
++  if (brand?.runtimeUiPackage === undefined || brand.runtimePatch === undefined) throw new Error('product brand: runtimeUiPackage and runtimePatch must be supplied together')
++  const manifest = JSON.parse(readFileSync(resolve(brand.runtimeUiPackage, 'package.json'), 'utf8'))
++  if (typeof manifest.name !== 'string' || !/^@[a-z0-9-]+\/[a-z0-9-]+$/.test(manifest.name)) throw new Error('product brand: invalid UI package name')
++  const destination=resolve(root, 'node_modules', manifest.name)
++  mkdirSync(destination,{recursive:true})
++  cpSync(resolve(brand.runtimeUiPackage,'lib'),resolve(destination,'lib'),{recursive:true})
++  const { devDependencies, ...runtimeManifest } = manifest
++  writeFileSync(resolve(destination,'package.json'),JSON.stringify(runtimeManifest,null,2)+'\n')
++  const webRoot=resolve(root,'node_modules/@deepseek-ai/dsh-web-app')
++  const webManifestPath=resolve(webRoot,'package.json')
++  const webManifest=JSON.parse(readFileSync(webManifestPath,'utf8'))
++  webManifest.dependencies[manifest.name]=manifest.version
++  writeFileSync(webManifestPath,JSON.stringify(webManifest,null,2)+'\n')
++  const patchFile=resolve(webRoot,'cordis.patch.yml')
++  writeFileSync(patchFile,readFileSync(patchFile,'utf8').trimEnd()+'\n'+readFileSync(brand.runtimePatch,'utf8').trim()+'\n')
++}
+diff --git a/scripts/product-brand.spec.ts b/scripts/product-brand.spec.ts
+new file mode 100644
+index 0000000000..aea722b702
+--- /dev/null
++++ b/scripts/product-brand.spec.ts
+@@ -0,0 +1,66 @@
++/** Brand configuration and self-contained runtime staging. */
++import { afterEach, expect, it } from 'vitest'
++import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { join, resolve } from 'node:path'
++import { readProductBrand, stageProductBrandRuntime } from './product-brand.mjs'
++
++const roots: string[] = []
++afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }) })
++function fixture() {
++  const root = mkdtempSync(join(tmpdir(), 'dsh-brand-'))
++  roots.push(root)
++  mkdirSync(join(root, 'assets'), { recursive: true })
++  writeFileSync(join(root, 'assets/icon.png'), 'icon')
++  writeFileSync(join(root, 'assets/favicon.svg'), '<svg/>')
++  const config = {
++    name: '叙芽岛', shortName: '叙芽岛', artifactName: 'xuya-island', manualUpdates: true,
++    lightBackground: '#f4f2ec', darkBackground: '#19231f', favicon: 'assets/favicon.svg',
++    windowsIcon: 'assets/icon.png', assetsDirectory: 'assets',
++  }
++  const file = join(root, 'brand.json')
++  const save = (value: object): void => { writeFileSync(file, JSON.stringify(value)) }
++  save(config)
++  return { root, config, save, env: { DSH_BRAND_CONFIG: file } }
++}
++it('keeps ordinary builds independent of any customization files', () => {
++  expect(readProductBrand({})).toBeUndefined()
++})
++it('resolves artwork relative to the brand document', () => {
++  const f = fixture()
++  expect(readProductBrand(f.env)?.windowsIcon).toBe(resolve(f.root, 'assets/icon.png'))
++})
++it.each([
++  { name: '' }, { artifactName: '../escape' }, { lightBackground: 'red;}</style>' },
++  { manualUpdates: 'yes' }, { windowsIcon: 'absent.png' }, { welcomeLogo: 'absent.svg' },
++  { windowsTrayIcon: 42 }, { installerAssets: 'assets' }, { installerTheme: 'absent.nsh' },
++])('rejects incomplete or unsafe brand configuration: %j', (invalid) => {
++  const f = fixture()
++  f.save({ ...f.config, ...invalid })
++  expect(() => readProductBrand(f.env)).toThrow()
++})
++it('stages extension bytes and config before sealing without retaining a development link', () => {
++  const f = fixture()
++  const ui = join(f.root, 'ui')
++  mkdirSync(join(ui, 'lib'), { recursive: true })
++  writeFileSync(join(ui, 'lib/index.js'), 'export function apply() {}')
++  writeFileSync(join(ui, 'package.json'), JSON.stringify({ name: '@example/brand-ui', version: '1.0.0', exports: { '.': './lib/index.js' }, devDependencies: { local: 'link:../source' } }))
++  writeFileSync(join(f.root, 'patch.yml'), '- id: brand-ui\n  name: "@example/brand-ui"\n')
++  f.save({ ...f.config, runtimeUiPackage: 'ui', runtimePatch: 'patch.yml' })
++  const runtime = join(f.root, 'runtime')
++  const web = join(runtime, 'node_modules/@deepseek-ai/dsh-web-app')
++  mkdirSync(web, { recursive: true })
++  writeFileSync(join(web, 'package.json'), JSON.stringify({ dependencies: {} }))
++  writeFileSync(join(web, 'cordis.patch.yml'), '- id: web\n')
++  stageProductBrandRuntime(runtime, f.env)
++  const installed = join(runtime, 'node_modules/@example/brand-ui')
++  expect(existsSync(join(installed, 'lib/index.js'))).toBe(true)
++  expect(JSON.parse(readFileSync(join(installed, 'package.json'), 'utf8'))).not.toHaveProperty('devDependencies')
++  expect(readFileSync(join(web, 'cordis.patch.yml'), 'utf8')).toContain('@example/brand-ui')
++  expect(JSON.parse(readFileSync(join(web, 'package.json'), 'utf8'))).toMatchObject({ dependencies: { '@example/brand-ui': '1.0.0' } })
++})
++it('rejects a runtime package without its configuration patch', () => {
++  const f = fixture()
++  f.save({ ...f.config, runtimeUiPackage: 'ui' })
++  expect(() => { stageProductBrandRuntime(join(f.root, 'runtime'), f.env) }).toThrow('supplied together')
++})

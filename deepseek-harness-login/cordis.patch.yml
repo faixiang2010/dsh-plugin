@@ -1,0 +1,8 @@
+# deepseek-harness-login bundle patch.
+#
+# 把本插件自己插入到 Cordis 组合中。没有这一行，lib/index.js 的 apply()
+# 永远不会执行（插件市场里显示"已安装"但登录逻辑完全没生效）。
+
+- insert:
+    - id: custom-login
+      name: 'deepseek-harness-login'

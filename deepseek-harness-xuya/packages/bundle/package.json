@@ -1,0 +1,11 @@
+{
+  "name": "@deepseek-ai/dsh-xuya-bundle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "叙芽岛界面与品牌定制",
+  "exports": { "./cordis.patch.yml": "./cordis.patch.yml", "./package.json": "./package.json" },
+  "files": ["cordis.patch.yml"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "dependencies": { "@deepseek-ai/dsh-xuya-ui": "workspace:*" }
+}

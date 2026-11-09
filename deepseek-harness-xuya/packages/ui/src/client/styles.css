@@ -1,0 +1,29 @@
+.xuya-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: 32% 32% 32% 12%;
+  color: var(--xuya-brand-ink);
+  background: var(--xuya-brand-soft);
+  font-family: 'KaiTi', 'STKaiti', 'Microsoft YaHei', serif;
+  font-weight: 500;
+  line-height: 1;
+}
+.xuya-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  gap: 8px;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-family);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 2px;
+}
+.xuya-wordmark small {
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.8px;
+  color: var(--dsw-alias-label-secondary);
+}

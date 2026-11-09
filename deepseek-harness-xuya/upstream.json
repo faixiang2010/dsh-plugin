@@ -1,0 +1,5 @@
+{
+  "version": "0.2.2-rc.1",
+  "commit": "fcc0ad462172522aaf5c93a7b2e01f6b9f0b0159",
+  "reference": "xuya-island/frontend-react 主站 styles-theme.css、App.tsx；仅复制视觉变量与标识，不改写参考项目"
+}

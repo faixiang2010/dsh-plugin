@@ -1,0 +1,39 @@
+{
+  "name": "dsh-skin-techno-neon",
+  "version": "0.2.0",
+  "description": "面向 DeepSeek Harness 的科技霓虹主题：赛博青配色、霓虹品牌标识、冷色边缘光效，覆盖原生界面。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": [
+        "./cordis.patch.yml"
+      ]
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/client.js",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "theme",
+    "skin"
+  ],
+  "license": "MIT"
+}
