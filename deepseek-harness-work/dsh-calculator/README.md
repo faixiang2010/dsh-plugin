@@ -45,14 +45,14 @@ DSH 的正规扩展点，全部在插件侧完成：
 侧栏 → **Plugins** → 安装 / 添加本地包 → 选择本目录：
 
 ```
-D:\electron\deepseek-harness-work\dsh-calculator
+<plugin-root>
 ```
 
 插件管理器会把它加入当前 profile 的依赖并启用 bundle。让 agent 代装也可以，与界面等价：
 
 ```jsonc
 // 安装（bundle 方式，写入 profile 的 patch 层）
-plugin_manager({ action: "install_bundle", target: "D:\\electron\\deepseek-harness-work\\dsh-calculator" })
+plugin_manager({ action: "install_bundle", target: "./" })
 
 // 卸载
 plugin_manager({ action: "remove_bundle", target: "@local/dsh-calculator" })
@@ -67,7 +67,7 @@ plugin_manager({ action: "remove_bundle", target: "@local/dsh-calculator" })
 ```json
 {
   "dependencies": {
-    "@local/dsh-calculator": "file:D:/electron/deepseek-harness-work/dsh-calculator"
+    "@local/dsh-calculator": "file:./"
   },
   "dsh": {
     "profile": {

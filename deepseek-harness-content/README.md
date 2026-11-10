@@ -61,7 +61,7 @@ controller 防抖 ──────────────▶ Host: ctx.llm.st
 侧栏 → **Plugins** → 安装 / 添加本地包 → 选择本目录：
 
 ```
-D:\electron\deepseek-harness-content
+<plugin-root>
 ```
 
 插件管理器会把它加入当前 profile 依赖并启用 bundle。
@@ -73,7 +73,7 @@ D:\electron\deepseek-harness-content
 ```json
 {
   "dependencies": {
-    "deepseek-harness-content": "link:D:/electron/deepseek-harness-content"
+    "deepseek-harness-content": "link:<plugin-root>"
   },
   "dsh": {
     "profile": {

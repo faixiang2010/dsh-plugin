@@ -64,7 +64,7 @@ deepseek-harness-login/
 
 **方式一：插件市场**（推荐）
 
-侧栏 → 插件市场 → 安装本地包 → 选择 `D:\electron\deepseek-harness-login`。
+侧栏 → 插件市场 → 安装本地包 → 选择 `<plugin-root>`。
 
 **方式二：手动写 profile**
 
@@ -72,14 +72,14 @@ deepseek-harness-login/
 
 ```json
 {
-  "dependencies": { "deepseek-harness-login": "link:D:/electron/deepseek-harness-login" },
+  "dependencies": { "deepseek-harness-login": "link:<plugin-root>" },
   "dsh": { "profile": { "bundles": ["deepseek-harness-login"] } }
 }
 ```
 
 ```powershell
 cd "$env:USERPROFILE\.dsh\profiles\desktop"
-node "D:\DeepSeek Harness\resources\runtime\primary-runtime\dependencies\pnpm\bin\pnpm.cjs" install --no-frozen-lockfile
+node "<dsh-install-dir>\resources\runtime\primary-runtime\dependencies\pnpm\bin\pnpm.cjs" install --no-frozen-lockfile
 ```
 
 > 必须用 **DSH 自带的 pnpm**。用系统 pnpm（10.x）会把 profile 锁到 `store\v10`，

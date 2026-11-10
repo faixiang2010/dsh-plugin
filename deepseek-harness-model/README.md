@@ -9,7 +9,7 @@
 
 ## 快速开始（4 步）
 
-1. 安装：DSH 侧栏 **Plugins** → 添加本地包 → 选 `D:\electron\deepseek-harness-model`
+1. 安装：DSH 侧栏 **Plugins** → 添加本地包 → 选 `<plugin-root>`
 2. **完全退出并重启**桌面端（改了 profile 的 bundle 列表，必须重启）
 3. 新建任务 → 模式下拉最下面选「大伟模式」→ 输入 `大伟自检`
    - 预期：出现 `工具调用 · dawei_probe`，返回 `DAWEI-MODE-OK`
@@ -51,7 +51,7 @@ DSH 的正规扩展点，全部在插件侧完成：
 侧栏 → **Plugins** → 安装 / 添加本地包 → 选择本目录：
 
 ```
-D:\electron\deepseek-harness-model
+<plugin-root>
 ```
 
 插件管理器会把它加入当前 profile 的依赖并启用 bundle。
@@ -63,7 +63,7 @@ D:\electron\deepseek-harness-model
 ```json
 {
   "dependencies": {
-    "deepseek-harness-model": "link:D:/electron/deepseek-harness-model"
+    "deepseek-harness-model": "link:<plugin-root>"
   },
   "dsh": {
     "profile": {
@@ -77,7 +77,7 @@ D:\electron\deepseek-harness-model
 
 ```powershell
 # profile 若由 pnpm 11 安装过，必须用同版本，否则报 ERR_PNPM_UNEXPECTED_STORE
-node "$env:LOCALAPPDATA\node\corepack\v1\pnpm\<版本>\bin\pnpm.cjs" add "link:D:/electron/deepseek-harness-model"
+node "$env:LOCALAPPDATA\node\corepack\v1\pnpm\<版本>\bin\pnpm.cjs" add "link:<plugin-root>"
 ```
 
 > `bundles` 的顺序决定补丁层优先级，放在最后即可覆盖前面的层。
@@ -119,7 +119,7 @@ node "$env:LOCALAPPDATA\node\corepack\v1\pnpm\<版本>\bin\pnpm.cjs" add "link:D
 在包目录执行（不需要装依赖）：
 
 ```powershell
-cd D:\electron\deepseek-harness-model
+cd ./
 node verify.mjs
 ```
 
@@ -178,7 +178,7 @@ node verify.mjs               # 全量（组合 dump + 安装 + 探针 + 证据�
 node verify.mjs --skip-dump   # 不依赖 dsh 源码，离线检查
 node verify.mjs --evidence-only
 $env:DSH_PROFILE = 'web'                          # 指定 dump 用的 profile（默认 web）
-$env:DSH_SOURCE  = 'D:\electron\deepseek-harness' # 指定源码位置
+$env:DSH_SOURCE  = '<dsh-source-root>'      # 指定源码位置
 ```
 
 退出码：A/B/C 有任一项失败为 1；仅 `C4` 待完成时为 0。

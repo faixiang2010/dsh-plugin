@@ -41,7 +41,7 @@ DSH 的正规扩展点，全部在插件侧完成：
 侧栏 → **Plugins** → 安装 / 添加本地包 → 选择本目录：
 
 ```
-D:\electron\deepseek-harness-skin
+<plugin-root>
 ```
 
 插件管理器会把它加入当前 profile 的依赖并启用 bundle。
@@ -53,7 +53,7 @@ D:\electron\deepseek-harness-skin
 ```json
 {
   "dependencies": {
-    "dsh-skin-techno-neon": "file:D:/electron/deepseek-harness-skin"
+    "dsh-skin-techno-neon": "file:./"
   },
   "dsh": {
     "profile": {

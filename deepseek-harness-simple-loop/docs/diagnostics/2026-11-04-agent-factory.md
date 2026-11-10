@@ -10,7 +10,7 @@
 
 ## 证据
 
-1. 实际 desktop 安装日志 `.plugin-manager/logs/operation-3IHyjR/pnpm.log` 记录了 `dwh-simple-loop 0.1.0 <- D:\electron\deepseek-harness-simple-loop`；卸载日志 `operation-T2sCb5/pnpm.log` 也记录了这个外链依赖。排查时 desktop 已无该依赖，市场状态将其列为 disabled，不能读取当次故障现场的实时工厂状态。
+1. 实际 desktop 安装日志 `.plugin-manager/logs/operation-3IHyjR/pnpm.log` 记录了 `dwh-simple-loop 0.1.0 <- <local-path>`；卸载日志 `operation-T2sCb5/pnpm.log` 也记录了这个外链依赖。排查时 desktop 已无该依赖，市场状态将其列为 disabled，不能读取当次故障现场的实时工厂状态。
 2. 当前 index.js 第 5 行导入 `@deepseek-ai/cordis`，还直接导入 dsh-session；agent.js 直接导入 dsh-agent、dsh-llm、dsh-scope。package.json 未声明这些 peerDependencies。
 3. 当前 cordis.patch.yml 第 3–4 行先禁用内置 agent-loop，第 6 行起插入自定义实现。
 4. 本机安装包 `dsh-app-boot/lib/index.js` 的 findInterceptionLayer（约 1337 行）、readPeerNames（约 1347 行）、routeLinked（约 1676 行）显示：profile 外部链接采用 linked 路由；匹配 peerDependencies 的包才转向宿主包表。没有声明的包继续走原生模块解析。
@@ -32,7 +32,7 @@
 ```text
 dwh-simple-loop (dwh-simple-loop): failed to import:
 Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@deepseek-ai/cordis'
-imported from D:\electron\deepseek-harness-simple-loop\index.js
+imported from <local-path>\index.js
 ```
 
 补齐 peer 的外链副本日志摘要：

@@ -40,7 +40,7 @@ dsh-plugin/
 打开 DSH → 侧栏 **插件** → **添加插件** → 输入对应插件目录的**绝对路径**：
 
 ```
-D:\electron\dsh-plugin\deepseek-harness-login
+<repo-root>\deepseek-harness-login
 ```
 
 安装成功后在列表中启用开关即可（部分插件需重启 DSH）。
@@ -52,7 +52,7 @@ D:\electron\dsh-plugin\deepseek-harness-login
 ```json
 {
   "dependencies": {
-    "deepseek-harness-login": "link:D:/electron/dsh-plugin/deepseek-harness-login"
+    "deepseek-harness-login": "link:<repo-root>/deepseek-harness-login"
   },
   "dsh": {
     "profile": {

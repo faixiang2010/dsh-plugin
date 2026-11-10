@@ -74,7 +74,7 @@ DSH 加载插件时会执行 `package.json` 的 `"main": "lib/index.js"` 和 `"e
 如果 `lib/` 目录不存在会直接报错，所以安装前**必须先构建**：
 
 ```bash
-cd d:\electron\deepseek-harness-dashboard
+cd ./
 pnpm install           # 仅首次需要
 pnpm build             # 产出 lib/index.js + lib/client.js
 ```
@@ -85,9 +85,9 @@ pnpm build             # 产出 lib/index.js + lib/client.js
 
 ```
 # Windows（推荐其中一种写法）
-D:\electron\deepseek-harness-dashboard
-file:D:\electron\deepseek-harness-dashboard
-link:D:\electron\deepseek-harness-dashboard
+<plugin-root>
+file:<plugin-root>
+link:<plugin-root>
 
 # macOS / Linux
 /Users/you/src/deepseek-harness-dashboard
@@ -106,12 +106,12 @@ file:/Users/you/src/deepseek-harness-dashboard
 |---|---|
 | npm 包名 | 对话框输入 `dsh-dashboard-wuhan`（需要先发布到 npm registry） |
 | GitHub 仓库 | `github:your-org/dsh-dashboard-wuhan` 或 `git+https://...` |
-| tarball | `https://.../package.tgz` 或本地 `D:\...\package.tgz` |
+| tarball | `https://.../package.tgz` 或本地 `<local-path>\package.tgz` |
 | cordis.patch.yml | 手动编辑 profile 的 `cordis.patch.yml`，用 `file:` 协议引用路径 |
 
 ### DSH 源码依据
 
-DSH Host 端 [install-spec.ts](file:///d:/electron/deepseek-harness/packages/boot/plugin-manager/src/install-spec.ts) 的 `parseInstallSpec()` 函数显式支持：
+DSH Host 端源码文件 `packages/boot/plugin-manager/src/install-spec.ts`（位于 `<dsh-source-root>` 仓库内）的 `parseInstallSpec()` 函数显式支持：
 
 ```
 parseInstallSpec(raw) → ParsedInstallSpec

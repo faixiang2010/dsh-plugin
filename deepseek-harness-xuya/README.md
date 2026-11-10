@@ -68,9 +68,52 @@ pnpm run package:windows
 
 `integration.patch` 保存当前接入改动。更新后需重新生成与验证此补丁，不要仅修改版本号来绕过不兼容。
 
-## 恢复原版展示
+## 品牌切换原理
 
-不加载定制覆盖层可恢复 DSH 默认主题与品牌插槽。网页标题、PWA 图标和桌面资源属于构建产物，需要清除 `DSH_BRAND_CONFIG` 后重新构建 DSH 才能恢复。该过程不删除会话或改写数据格式。
+本项目是 **DeepSeek Harness 的品牌覆盖层**，不是独立可运行项目。它的 `scripts/xuya.mjs` 在执行构建和启动时，会：
+
+1. 找到同级的 `../deepseek-harness` 主仓库（可通过 `DSH_SOURCE` 环境变量覆盖）
+2. 自动注入 `DSH_BRAND_CONFIG` 环境变量，指向本项目的 `brand.json`
+3. **在主仓库目录下**执行构建命令
+
+这意味着：**xuya 和主仓库共享同一份构建产物**（`deepseek-harness/apps/web/dist/`）。浏览器页面标题、PWA 图标、桌面窗口图标等品牌信息是在"构建时"写死到 dist 里的，不是运行时动态读取的。谁最后一次构建了 dist，`pnpm dsh web` 就服务谁的品牌。
+
+## 品牌切换操作
+
+### 切到叙芽岛品牌
+
+在**定制项目根目录**下执行：
+
+```powershell
+pnpm run start:web
+```
+
+脚本会自动设置 `DSH_BRAND_CONFIG`、执行构建、然后启动 dsh web。浏览器 title 会变成 **叙芽岛**。
+
+### 切回 DSH 原版品牌
+
+在**主仓库根目录**下执行：
+
+```powershell
+# 清除品牌配置环境变量（PowerShell）
+$env:DSH_BRAND_CONFIG = $null
+# 不带品牌地重新构建
+pnpm run build:artifacts
+# 然后启动
+pnpm dsh web
+```
+
+浏览器 title 会恢复为 **DSH Local Build**。
+
+### 切换失败的常见原因
+
+| 现象 | 原因 | 解决 |
+|---|---|---|
+| 在主仓库跑 `pnpm dsh web` 但 title 仍是"叙芽岛" | 上次构建 dist 时带了 `DSH_BRAND_CONFIG`，dist 没重建 | `$env:DSH_BRAND_CONFIG=$null; pnpm run build:artifacts` |
+| 在 xuya 里跑 `start:web` 但启动失败 | 主仓库版本不兼容，或 `integration.patch` 未 apply | 执行 `node scripts/integration.mjs check` 检查 |
+| 构建时提示缺少素材文件 | `brand.json` 引用的路径不存在，或素材未生成 | 先跑 `pnpm run build` 生成素材 |
+
+切换操作不会删除任何会话数据或改写数据格式，只是重新生成一份带不同品牌信息的前端静态资源。
 
 ## 验证范围
 
