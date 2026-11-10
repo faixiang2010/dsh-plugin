@@ -2,8 +2,9 @@
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { findDshRoot } from './find-dsh.mjs'
 const root = resolve(import.meta.dirname, '..')
-const source = resolve(process.env.DSH_SOURCE ?? resolve(root, '..', 'deepseek-harness'))
+const source = findDshRoot()
 const require = createRequire(resolve(source, 'package.json'))
 const { build } = await import(pathToFileURL(require.resolve('tsdown')).href)
 const { clientBundle } = await import(pathToFileURL(resolve(source, 'packages/client/tsdown.client.ts')).href)

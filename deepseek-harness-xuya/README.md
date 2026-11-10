@@ -10,15 +10,36 @@
 - `scripts`：独立构建、运行、升级接入检查。
 - `reports`：验收结果与截图；`.runtime` 是忽略入库的本地运行副本和隔离预览数据。
 
-DSH 默认位置为同级的 `../deepseek-harness`。定制项目不加入它的工作区。当前兼容记录见 `upstream.json`；上游接口仍可能在同版本内变化，因此版本检查不能替代构建与回归。
+DSH 检出位置由 `scripts/find-dsh.mjs` 统一解析：优先 `DSH_SOURCE` 环境变量，然后自动向上扫描六层 sibling `deepseek-harness` 目录。定制项目不加入 DSH 的工作区，通过 `link:` 协议在 `packages/*/package.json` 里声明对上游包的开发依赖；换位置后跑一次 `pnpm run setup` 即可重写所有 link。当前兼容记录见 `upstream.json`；上游接口仍可能在同版本内变化，因此版本检查不能替代构建与回归。
+
+## 路径配置
+
+所有脚本（xuya / bundle / integration / 测试）共享同一份 DSH 根路径解析逻辑，**一处配置全站受益**：
+
+| 步骤 | 命令 |
+|---|---|
+| 指定位置（可选，不设则自动搜索） | `$env:DSH_SOURCE = "D:\你的\deepseek-harness"` |
+| 重写 `packages/*/package.json` 里的 `link:` 为绝对路径 | `pnpm run setup` |
+| 刷新依赖符号链接 | `pnpm install` |
+
+候选搜索顺序：`$DSH_SOURCE` → `../deepseek-harness` → `../../deepseek-harness` → `../../../deepseek-harness`（向上最多六层）→ 取第一个存在的。所有脚本进程会把解析到的路径写进环境变量传递给子进程（pnpm、tsx），所以 `link:` 绝对路径重写只在 `setup` 时做一次。
 
 ## 安装和构建
 
 在本目录执行：
 
 ```powershell
+# 1)（可选）如果 DSH 不在默认扫描位置，先指定
+# $env:DSH_SOURCE = "D:\your\deepseek-harness"
+
+# 2) 生成素材 + 重写 link 路径
+pnpm run setup
 pnpm install
+
+# 3) 接入检查
 node scripts/integration.mjs check
+
+# 4) 构建 + 类型检查
 pnpm run build
 pnpm run typecheck
 pnpm test
@@ -72,8 +93,8 @@ pnpm run package:windows
 
 本项目是 **DeepSeek Harness 的品牌覆盖层**，不是独立可运行项目。它的 `scripts/xuya.mjs` 在执行构建和启动时，会：
 
-1. 找到同级的 `../deepseek-harness` 主仓库（可通过 `DSH_SOURCE` 环境变量覆盖）
-2. 自动注入 `DSH_BRAND_CONFIG` 环境变量，指向本项目的 `brand.json`
+1. 调用 `scripts/find-dsh.mjs` 解析 DSH 主仓库位置（优先 `DSH_SOURCE` 环境变量，否则向上六层自动扫描）
+2. 自动注入 `DSH_BRAND_CONFIG` 和 `DSH_SOURCE` 环境变量，指向本项目的 `brand.json` 和解析到的 DSH 根
 3. **在主仓库目录下**执行构建命令
 
 这意味着：**xuya 和主仓库共享同一份构建产物**（`deepseek-harness/apps/web/dist/`）。浏览器页面标题、PWA 图标、桌面窗口图标等品牌信息是在"构建时"写死到 dist 里的，不是运行时动态读取的。谁最后一次构建了 dist，`pnpm dsh web` 就服务谁的品牌。
@@ -112,6 +133,7 @@ pnpm dsh web
 | 在主仓库跑 `pnpm dsh web` 但 title 仍是"叙芽岛" | 上次构建 dist 时带了 `DSH_BRAND_CONFIG`，dist 没重建 | `$env:DSH_BRAND_CONFIG=$null; pnpm run build:artifacts` |
 | 在 xuya 里跑 `start:web` 但启动失败 | 主仓库版本不兼容，或 `integration.patch` 未 apply | 执行 `node scripts/integration.mjs check` 检查 |
 | 构建时提示缺少素材文件 | `brand.json` 引用的路径不存在，或素材未生成 | 先跑 `pnpm run build` 生成素材 |
+| 脚本报 `ENOENT` / `MODULE_NOT_FOUND` 指向 `deepseek-harness` 子目录 | DSH 检出不在自动扫描范围内，或 `link:` 路径过时 | `$env:DSH_SOURCE="D:\你的\deepseek-harness"; pnpm run setup; pnpm install` |
 
 切换操作不会删除任何会话数据或改写数据格式，只是重新生成一份带不同品牌信息的前端静态资源。
 

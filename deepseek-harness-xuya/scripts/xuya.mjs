@@ -6,20 +6,43 @@ import { createRequire } from 'node:module'
 import { spawnSync } from 'node:child_process'
 import { paletteTokens, bootCss } from './palette.mjs'
 import { buildWindowsArtwork } from './artwork.mjs'
+import { findDshRoot } from './find-dsh.mjs'
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'..')
-const source=resolve(process.env.DSH_SOURCE??join(root,'..','deepseek-harness'))
+const source=findDshRoot()
 const brandFile=join(root,'brand.json')
 const brand=JSON.parse(readFileSync(brandFile,'utf8'))
 const upstream=JSON.parse(readFileSync(join(root,'upstream.json'),'utf8'))
 const hostRequire=createRequire(join(source,'package.json'))
 const ownRequire=createRequire(join(root,'package.json'))
-const env={...process.env,DSH_BRAND_CONFIG:brandFile}
+const env={...process.env,DSH_BRAND_CONFIG:brandFile,DSH_SOURCE:source}
 function run(args,cwd=source,extra={}){
  const result=spawnSync(process.execPath,args,{cwd,env:{...env,...extra},stdio:'inherit',windowsHide:true})
  if(result.error)throw result.error
  if(result.status!==0)throw new Error('Command failed: '+args.join(' '))
 }
 function pnpm(args,cwd=source,extra={}){const file=hostRequire.resolve('pnpm');const manifest=JSON.parse(readFileSync(file,'utf8'));run([resolve(dirname(file),manifest.bin.pnpm),...args],cwd,extra)}
+function killPort(port){
+ const isWin=process.platform==='win32'
+ const findCmd=isWin?['netstat','-ano']:['lsof','-ti',`tcp:${port}`]
+ const regex=isWin?new RegExp(`:${port}\\s+.*LISTENING\\s+(\\d+)`,`g`):/\n(\d+)\n/g
+ const out=spawnSync(findCmd[0],findCmd.slice(1),{encoding:'utf8',windowsHide:true})
+ if(out.status!==0||!out.stdout){console.log(`XuYA: port ${port} is free`);return}
+ const pids=isWin
+  ? [...out.stdout.matchAll(regex)].map(m=>m[1])
+  : (out.stdout.match(/^\d+$/gm)||[])
+ const unique=[...new Set(pids)]
+ if(unique.length===0){console.log(`XuYA: port ${port} is free`);return}
+ console.log(`XuYA: killing ${unique.length} PID(s) on port ${port}: ${unique.join(', ')}`)
+ for(const pid of unique){
+  const kill=isWin
+   ? spawnSync('taskkill',['/PID',pid,'/T','/F'],{stdio:'pipe',windowsHide:true})
+   : spawnSync('kill',['-9',pid])
+  if(kill.status!==0)console.warn(`XuYA: failed to kill PID ${pid}: ${kill.stderr?.toString().trim()||kill.error?.message||'unknown'}`)
+ }
+ // Give the OS a moment to release the socket before rebinding.
+ Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,600)
+ console.log('XuYA: port released')
+}
 function check(){
  const m=JSON.parse(readFileSync(join(source,'package.json'),'utf8'))
  if(m.version!==upstream.version)throw new Error('Review DSH compatibility: '+m.version+'; validated '+upstream.version)
@@ -61,7 +84,10 @@ else if(command==='web'||command==='desktop'){
  const entry=await profile(command)
  if(command==='desktop'){pnpm(['run','start:desktop'],source,{DSH_DESKTOP_PATCH:entry,DSH_DESKTOP_OPEN_DEVTOOLS:'0'});process.exit(0)}
  const args=['dsh',command,'--patch',entry]
- if(command==='web')args.push('--patch',join(source,'apps/web/tests/pin-browse-picker.overlay.yml'),'--no-open','--port',process.env.XUYA_WEB_PORT??'3090')
+ if(command==='web'){
+  args.push('--patch',join(source,'apps/web/tests/pin-browse-picker.overlay.yml'),'--no-open','--port',process.env.XUYA_WEB_PORT??'3090')
+  killPort(parseInt(args[args.length-1],10))
+ }
  pnpm(args,source,{DSH_XUYA_UI:entry})
 }else if(command==='package-windows'){await build();const settings=join(root,'.cache/packaging');mkdirSync(join(settings,'presets'),{recursive:true});writeFileSync(join(settings,'presets/test.env'),'DSH_DESKTOP_APP_ID=com.deepseek.harness\nDSH_DESKTOP_AUTO_UPDATE_ENV=test\nDSH_DESKTOP_NPM_REGISTRY=https://registry.npmjs.org\n');pnpm(['run','package:desktop:win:x64:unsigned'],source,{DSH_PACKAGING_PRESET:'test',DSH_PACKAGING_CONFIG_DIR:settings})}
 else throw new Error('Unknown command '+command)

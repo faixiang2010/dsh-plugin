@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { resolve } from 'node:path'
 import { readFileSync } from 'node:fs'
+import { findDshRoot } from '../scripts/find-dsh.mjs'
 const root=resolve(import.meta.dirname,'..')
-const source=resolve(process.env.DSH_SOURCE??resolve(root,'..','deepseek-harness'))
+const source=findDshRoot()
 const url=new URL(process.env.XUYA_QA_URL)
 if(!['127.0.0.1','localhost'].includes(url.hostname))throw new Error('XUYA_QA_URL must address the local preview')
 const require=createRequire(resolve(source,'apps/web/package.json'))
