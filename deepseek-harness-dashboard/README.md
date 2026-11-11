@@ -54,7 +54,7 @@ ctx.slots.inject('sidebar.panellist', () => ctx.slots.register(
 
 ## 开关机制
 
-`cordis.patch.yml` 里的 `disabled: true` 让插件默认关闭。用户在 DSH 中启用后，DSH 才会加载 `lib/index.js` 和 `lib/client.js`，侧边栏菜单随之出现。
+`cordis.patch.yml` 里的 `disabled: false` 让插件默认启用；改成 `true`（或在插件管理面板里关闭）后，DSH 不再加载 `lib/index.js` 与 `lib/client.js`，侧边栏菜单随之消失。
 
 ## 构建
 
@@ -68,10 +68,11 @@ pnpm build
 
 DSH 插件管理面板（截图中的 **"+ 添加插件"** 对话框）**完全支持本地目录路径安装**。
 
-### 第 1 步：先构建插件（必须）
+### 第 1 步：确认 lib/ 存在（改过源码才需要重新构建）
 
-DSH 加载插件时会执行 `package.json` 的 `"main": "lib/index.js"` 和 `"exports"`，
-如果 `lib/` 目录不存在会直接报错，所以安装前**必须先构建**：
+DSH 加载插件时会解析 `package.json` 的 `"main": "lib/index.js"` 与 `"exports"`，
+`lib/` 缺失会直接报 `ERR_MODULE_NOT_FOUND`。本仓库已把 `lib/` 产物纳入版本控制，
+克隆后可直接安装；如果你改过 `src/`，再执行：
 
 ```bash
 cd ./
@@ -96,8 +97,8 @@ file:/Users/you/src/deepseek-harness-dashboard
 
 然后点 **安装**。安装成功后：
 - 插件会出现在"已安装"列表
-- 默认是**关闭状态**（`cordis.patch.yml` 里 `disabled: true`）
-- 打开开关 → 左侧菜单栏出现 **大伟的仪表盘** 图标
+- 默认是**启用状态**（`cordis.patch.yml` 里 `disabled: false`），可在插件管理面板关闭
+- 启用后左侧菜单栏出现 **大伟的仪表盘** 图标
 - 点击图标 → 主面板显示武汉介绍
 
 ### 其他安装方式（进阶）

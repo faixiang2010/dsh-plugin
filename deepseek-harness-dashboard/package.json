@@ -44,7 +44,7 @@
   },
   "packageManager": "pnpm@11.7.0",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "~4.0.5",
+    "@deepseek-ai/cordis": "^4.0.5",
     "@deepseek-ai/dsh-client-locale": "^0.2.1-alpha.2",
     "@deepseek-ai/dsh-client-ui-layout": "^0.2.1-alpha.2",
     "@deepseek-ai/dsh-client-ui-sidebar": "^0.2.1-alpha.2",
